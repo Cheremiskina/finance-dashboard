@@ -1,0 +1,285 @@
+<script setup>
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useAccountsStore } from '@/stores/accounts'
+
+const accountsStore = useAccountsStore()
+
+const isFormOpen = ref(false)
+const isSaving = ref(false)
+const formError = ref('')
+
+const form = reactive({
+  name: '',
+  type: 'card',
+  balance: '',
+})
+
+const accountTypes = [
+  { value: 'card', label: 'Банковская карта', shortLabel: 'Карта', icon: '💳' },
+  { value: 'cash', label: 'Наличные', shortLabel: 'Наличные', icon: '💵' },
+  { value: 'savings', label: 'Накопительный счет', shortLabel: 'Накопления', icon: '🏦' },
+  { value: 'deposit', label: 'Вклад', shortLabel: 'Вклад', icon: '🔒' },
+  { value: 'broker', label: 'Брокерский счет', shortLabel: 'Инвестиции', icon: '📈' },
+]
+
+const groupedSummary = computed(() => {
+  const result = {
+    card: 0,
+    cash: 0,
+    savings: 0,
+    deposit: 0,
+    broker: 0,
+  }
+
+  for (const account of accountsStore.activeAccounts) {
+    if (result[account.type] !== undefined) {
+      result[account.type] += Number(account.balance || 0)
+    }
+  }
+
+  return result
+})
+
+onMounted(() => {
+  accountsStore.loadAccounts()
+})
+
+function getAccountType(type) {
+  return (
+    accountTypes.find((accountType) => accountType.value === type) ?? {
+      label: 'Другой счет',
+      shortLabel: 'Счет',
+      icon: '💰',
+    }
+  )
+}
+
+function formatMoney(value) {
+  return new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency: 'RUB',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0))
+}
+
+function resetForm() {
+  form.name = ''
+  form.type = 'card'
+  form.balance = ''
+  formError.value = ''
+}
+
+function closeForm() {
+  resetForm()
+  isFormOpen.value = false
+}
+
+async function handleSubmit() {
+  formError.value = ''
+
+  const name = form.name.trim()
+  const normalizedBalance = String(form.balance).replace(',', '.')
+  const balance = Number(normalizedBalance)
+
+  if (!name) {
+    formError.value = 'Введите название счета.'
+    return
+  }
+
+  if (form.balance === '' || !Number.isFinite(balance)) {
+    formError.value = 'Введите корректный баланс.'
+    return
+  }
+
+  isSaving.value = true
+
+  try {
+    await accountsStore.addAccount({
+      name,
+      type: form.type,
+      balance,
+    })
+
+    closeForm()
+  } catch {
+    formError.value = 'Не удалось сохранить счет.'
+  } finally {
+    isSaving.value = false
+  }
+}
+
+async function removeAccount(account) {
+  const shouldDelete = window.confirm(`Удалить счет «${account.name}»?`)
+
+  if (!shouldDelete) {
+    return
+  }
+
+  await accountsStore.deleteAccount(account.id)
+}
+</script>
+
+<template>
+  <section class="screen">
+    <header class="topbar topbar--with-action">
+      <div>
+        <span class="topbar-label">Ваши счета</span>
+        <h1 class="screen-title">Счета</h1>
+      </div>
+
+      <button
+        v-if="!isFormOpen"
+        class="primary-button"
+        type="button"
+        @click="isFormOpen = true"
+      >
+        + Счет
+      </button>
+    </header>
+
+    <section class="mini-summary">
+      <div class="mini-summary__item mini-summary__item--blue">
+        <span>Всего</span>
+        <strong>{{ formatMoney(accountsStore.totalBalance) }}</strong>
+      </div>
+
+      <div class="mini-summary__item mini-summary__item--violet">
+        <span>Накопления</span>
+        <strong>
+          {{ formatMoney(groupedSummary.savings + groupedSummary.deposit) }}
+        </strong>
+      </div>
+
+      <div class="mini-summary__item mini-summary__item--pink">
+        <span>Инвестиции</span>
+        <strong>{{ formatMoney(groupedSummary.broker) }}</strong>
+      </div>
+    </section>
+
+    <form
+      v-if="isFormOpen"
+      class="surface-card sheet-card"
+      @submit.prevent="handleSubmit"
+    >
+      <div class="sheet-card__head">
+        <div>
+          <h2>Новый счет</h2>
+          <p>Добавьте счет и укажите его текущий баланс.</p>
+        </div>
+
+        <button class="ghost-button" type="button" @click="closeForm">
+          ✕
+        </button>
+      </div>
+
+      <div class="field-list">
+        <label class="field">
+          <span class="field-label">Название</span>
+          <input
+            v-model="form.name"
+            class="text-input"
+            type="text"
+            maxlength="50"
+            placeholder="Например, Основная карта"
+            autocomplete="off"
+          />
+        </label>
+
+        <label class="field">
+          <span class="field-label">Тип счета</span>
+          <select v-model="form.type" class="text-input">
+            <option
+              v-for="accountType in accountTypes"
+              :key="accountType.value"
+              :value="accountType.value"
+            >
+              {{ accountType.icon }} {{ accountType.label }}
+            </option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Текущий баланс</span>
+          <input
+            v-model="form.balance"
+            class="text-input"
+            type="text"
+            inputmode="decimal"
+            placeholder="0"
+            autocomplete="off"
+          />
+        </label>
+      </div>
+
+      <p v-if="formError" class="error-message">
+        {{ formError }}
+      </p>
+
+      <div class="sheet-card__actions">
+        <button class="secondary-button" type="button" @click="closeForm">
+          Отмена
+        </button>
+
+        <button class="primary-button" type="submit" :disabled="isSaving">
+          {{ isSaving ? 'Сохраняем…' : 'Добавить счет' }}
+        </button>
+      </div>
+    </form>
+
+    <p v-if="accountsStore.error" class="error-message">
+      {{ accountsStore.error }}
+    </p>
+
+    <div v-if="accountsStore.isLoading" class="surface-card">
+      Загружаем счета…
+    </div>
+
+    <div v-else-if="accountsStore.activeAccounts.length" class="account-stack">
+      <article
+        v-for="account in accountsStore.activeAccounts"
+        :key="account.id"
+        class="account-item"
+      >
+        <div class="account-item__left">
+          <div
+            class="account-avatar"
+            :class="`account-avatar--${account.type}`"
+          >
+            {{ getAccountType(account.type).icon }}
+          </div>
+
+          <div class="account-item__meta">
+            <strong>{{ account.name }}</strong>
+            <span>{{ getAccountType(account.type).shortLabel }}</span>
+          </div>
+        </div>
+
+        <div class="account-item__right">
+          <strong class="account-item__amount">
+            {{ formatMoney(account.balance) }}
+          </strong>
+
+          <button
+            class="ghost-button ghost-button--danger"
+            type="button"
+            :aria-label="`Удалить счет ${account.name}`"
+            @click="removeAccount(account)"
+          >
+            Удалить
+          </button>
+        </div>
+      </article>
+    </div>
+
+    <div v-else class="empty-card">
+      <div class="empty-card__icon">💳</div>
+      <strong>Счета пока не добавлены</strong>
+      <p>Начните с основной карты, наличных или накопительного счета.</p>
+
+      <button class="primary-button" type="button" @click="isFormOpen = true">
+        Добавить первый счет
+      </button>
+    </div>
+  </section>
+</template>
