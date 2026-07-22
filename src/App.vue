@@ -1,4 +1,5 @@
 <script setup>
+import PwaUpdatePrompt from '@/components/PwaUpdatePrompt.vue'
 import { RouterLink, RouterView } from 'vue-router'
 </script>
 
@@ -117,5 +118,6 @@ import { RouterLink, RouterView } from 'vue-router'
         </RouterLink>
       </nav>
     </div>
+    <PwaUpdatePrompt />
   </div>
 </template>

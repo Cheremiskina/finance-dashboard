@@ -1,16 +1,43 @@
-import { fileURLToPath, URL } from 'node:url'
-
-import { defineConfig } from 'vite'
+import {
+  readFileSync,
+} from 'node:fs'
+import {
+  fileURLToPath,
+  URL,
+} from 'node:url'
+import {
+  defineConfig,
+} from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { VitePWA } from 'vite-plugin-pwa'
+import {
+  VitePWA,
+} from 'vite-plugin-pwa'
+
+const packageJson = JSON.parse(
+  readFileSync(
+    new URL(
+      './package.json',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
+)
 
 export default defineConfig({
   base: '/finance-dashboard/',
+
+  define: {
+    'import.meta.env.VITE_APP_VERSION':
+      JSON.stringify(
+        packageJson.version,
+      ),
+  },
+
   plugins: [
     vue(),
 
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
 
       includeAssets: [
         'favicon-32x32.png',
@@ -20,18 +47,21 @@ export default defineConfig({
       manifest: {
         name: 'Мои финансы',
         short_name: 'Финансы',
+
         description:
           'Личный финансовый дашборд и планировщик распределения дохода.',
 
         lang: 'ru',
         start_url: './',
         scope: './',
-
         display: 'standalone',
         orientation: 'portrait',
 
-        background_color: '#f4f7fb',
-        theme_color: '#5b6df6',
+        background_color:
+          '#f4f7fb',
+
+        theme_color:
+          '#5b6df6',
 
         icons: [
           {
@@ -39,11 +69,13 @@ export default defineConfig({
             sizes: '192x192',
             type: 'image/png',
           },
+
           {
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
           },
+
           {
             src: 'pwa-512x512.png',
             sizes: '512x512',
@@ -66,7 +98,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(
-        new URL('./src', import.meta.url),
+        new URL(
+          './src',
+          import.meta.url,
+        ),
       ),
     },
   },

@@ -6,11 +6,15 @@ import {
   ref,
   watch,
 } from 'vue'
+import { RouterLink } from 'vue-router'
+import DataHealthCard from '@/components/DataHealthCard.vue'
 import {
   exportBackup,
   importBackup,
 } from '@/services/backup'
-import { RouterLink } from 'vue-router'
+import {
+  recordBackupCreated,
+} from '@/services/dataHealth'
 import { useAccountsStore } from '@/stores/accounts'
 import { useAllocationStore } from '@/stores/allocation'
 
@@ -70,18 +74,13 @@ const accountTypes = {
 const totalLifeBudget = computed(() =>
   form.categories.reduce(
     (total, category) =>
-      total +
-      parseNumber(
-        category.amount,
-      ),
+      total + parseNumber(category.amount),
     0,
   ),
 )
 
 const minimumBalance = computed(() =>
-  parseNumber(
-    form.minimumBalance,
-  ),
+  parseNumber(form.minimumBalance),
 )
 
 const totalToKeep = computed(
@@ -93,10 +92,7 @@ const totalToKeep = computed(
 const totalPercentage = computed(() =>
   form.rules.reduce(
     (total, rule) =>
-      total +
-      parseNumber(
-        rule.percentage,
-      ),
+      total + parseNumber(rule.percentage),
     0,
   ),
 )
@@ -108,16 +104,11 @@ const percentageIsValid = computed(
     ) < 0.001,
 )
 
-const expectedMonthlyIncome =
-  computed(
-    () =>
-      parseNumber(
-        form.salaryAmountFirst,
-      ) +
-      parseNumber(
-        form.salaryAmountSecond,
-      ),
-  )
+const expectedMonthlyIncome = computed(
+  () =>
+    parseNumber(form.salaryAmountFirst) +
+    parseNumber(form.salaryAmountSecond),
+)
 
 onMounted(async () => {
   await Promise.all([
@@ -141,15 +132,11 @@ function createId() {
 }
 
 function parseNumber(value) {
-  const normalized = String(
-    value ?? '',
-  )
+  const normalized = String(value ?? '')
     .replace(/\s/g, '')
     .replace(',', '.')
 
-  const result = Number(
-    normalized,
-  )
+  const result = Number(normalized)
 
   return Number.isFinite(result)
     ? result
@@ -157,8 +144,7 @@ function parseNumber(value) {
 }
 
 function hydrateForm() {
-  const saved =
-    allocationStore.settings
+  const saved = allocationStore.settings
 
   form.sourceAccountId =
     saved.sourceAccountId ?? ''
@@ -167,64 +153,52 @@ function hydrateForm() {
     saved.salaryDayFirst ?? 5,
   )
 
-  form.salaryAmountFirst =
-    String(
-      saved.salaryAmountFirst ?? 0,
-    )
+  form.salaryAmountFirst = String(
+    saved.salaryAmountFirst ?? 0,
+  )
 
-  form.salaryDaySecond =
-    String(
-      saved.salaryDaySecond ?? 20,
-    )
+  form.salaryDaySecond = String(
+    saved.salaryDaySecond ?? 20,
+  )
 
-  form.salaryAmountSecond =
-    String(
-      saved.salaryAmountSecond ?? 0,
-    )
+  form.salaryAmountSecond = String(
+    saved.salaryAmountSecond ?? 0,
+  )
 
-  form.minimumBalance =
-    String(
-      saved.minimumBalance ?? 0,
-    )
+  form.minimumBalance = String(
+    saved.minimumBalance ?? 0,
+  )
 
-  form.categories =
-    saved.categories.map(
-      (category) => ({
-        id: category.id,
-        name: category.name,
+  form.categories = saved.categories.map(
+    (category) => ({
+      id: category.id,
+      name: category.name,
+      amount: String(category.amount),
+    }),
+  )
 
-        amount: String(
-          category.amount,
-        ),
-      }),
-    )
+  form.rules = saved.rules.map(
+    (rule) => ({
+      targetAccountId: Number(
+        rule.targetAccountId,
+      ),
 
-  form.rules =
-    saved.rules.map(
-      (rule) => ({
-        targetAccountId: Number(
-          rule.targetAccountId,
-        ),
-
-        percentage: String(
-          rule.percentage,
-        ),
-      }),
-    )
+      percentage: String(
+        rule.percentage,
+      ),
+    }),
+  )
 
   if (
     !form.sourceAccountId &&
-    accountsStore
-      .activeAccounts.length
+    accountsStore.activeAccounts.length
   ) {
     const preferredSource =
-      accountsStore
-        .activeAccounts.find(
-          (account) =>
-            account.type === 'card',
-        ) ??
-      accountsStore
-        .activeAccounts[0]
+      accountsStore.activeAccounts.find(
+        (account) =>
+          account.type === 'card',
+      ) ??
+      accountsStore.activeAccounts[0]
 
     form.sourceAccountId =
       preferredSource.id
@@ -238,50 +212,36 @@ function syncRules() {
     form.sourceAccountId,
   )
 
-  const existingRules =
-    new Map(
-      form.rules.map(
-        (rule) => [
-          Number(
-            rule.targetAccountId,
-          ),
+  const existingRules = new Map(
+    form.rules.map((rule) => [
+      Number(rule.targetAccountId),
+      rule,
+    ]),
+  )
 
-          rule,
-        ],
-      ),
+  form.rules = accountsStore.activeAccounts
+    .filter(
+      (account) =>
+        account.id !== sourceId,
     )
+    .map((account) => {
+      const existingRule =
+        existingRules.get(account.id)
 
-  form.rules =
-    accountsStore
-      .activeAccounts
-      .filter(
-        (account) =>
-          account.id !== sourceId,
-      )
-      .map((account) => {
-        const existingRule =
-          existingRules.get(
-            account.id,
-          )
+      return {
+        targetAccountId: account.id,
 
-        return {
-          targetAccountId:
-            account.id,
-
-          percentage:
-            existingRule
-              ?.percentage ?? '0',
-        }
-      })
+        percentage:
+          existingRule?.percentage ?? '0',
+      }
+    })
 }
 
 function getAccount(accountId) {
-  return accountsStore
-    .activeAccounts.find(
-      (account) =>
-        account.id ===
-        Number(accountId),
-    )
+  return accountsStore.activeAccounts.find(
+    (account) =>
+      account.id === Number(accountId),
+  )
 }
 
 function getAccountType(type) {
@@ -302,9 +262,7 @@ function formatMoney(value) {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     },
-  ).format(
-    Number(value || 0),
-  )
+  ).format(Number(value || 0))
 }
 
 function addCategory() {
@@ -317,14 +275,11 @@ function addCategory() {
   successMessage.value = ''
 }
 
-function removeCategory(
-  categoryId,
-) {
+function removeCategory(categoryId) {
   form.categories =
     form.categories.filter(
       (category) =>
-        category.id !==
-        categoryId,
+        category.id !== categoryId,
     )
 
   successMessage.value = ''
@@ -334,34 +289,25 @@ async function handleSave() {
   formError.value = ''
   successMessage.value = ''
 
-  const sourceAccountId =
-    Number(
-      form.sourceAccountId,
-    )
+  const sourceAccountId = Number(
+    form.sourceAccountId,
+  )
 
-  const salaryDayFirst =
-    Math.trunc(
-      parseNumber(
-        form.salaryDayFirst,
-      ),
-    )
+  const salaryDayFirst = Math.trunc(
+    parseNumber(form.salaryDayFirst),
+  )
 
-  const salaryDaySecond =
-    Math.trunc(
-      parseNumber(
-        form.salaryDaySecond,
-      ),
-    )
+  const salaryDaySecond = Math.trunc(
+    parseNumber(form.salaryDaySecond),
+  )
 
-  const salaryAmountFirst =
-    parseNumber(
-      form.salaryAmountFirst,
-    )
+  const salaryAmountFirst = parseNumber(
+    form.salaryAmountFirst,
+  )
 
-  const salaryAmountSecond =
-    parseNumber(
-      form.salaryAmountSecond,
-    )
+  const salaryAmountSecond = parseNumber(
+    form.salaryAmountSecond,
+  )
 
   if (!sourceAccountId) {
     formError.value =
@@ -402,31 +348,22 @@ async function handleSave() {
     return
   }
 
-  if (
-    minimumBalance.value < 0
-  ) {
+  if (minimumBalance.value < 0) {
     formError.value =
       'Неснижаемый остаток не может быть отрицательным.'
 
     return
   }
 
-  if (
-    !form.categories.length
-  ) {
+  if (!form.categories.length) {
     formError.value =
       'Добавьте хотя бы одну категорию бюджета.'
 
     return
   }
 
-  for (
-    const category of
-    form.categories
-  ) {
-    if (
-      !category.name.trim()
-    ) {
+  for (const category of form.categories) {
+    if (!category.name.trim()) {
       formError.value =
         'У каждой категории должно быть название.'
 
@@ -434,9 +371,7 @@ async function handleSave() {
     }
 
     if (
-      parseNumber(
-        category.amount,
-      ) < 0
+      parseNumber(category.amount) < 0
     ) {
       formError.value =
         'Сумма категории не может быть отрицательной.'
@@ -445,36 +380,29 @@ async function handleSave() {
     }
   }
 
-  const activeRules =
-    form.rules
-      .map((rule) => ({
-        targetAccountId:
-          Number(
-            rule.targetAccountId,
-          ),
+  const activeRules = form.rules
+    .map((rule) => ({
+      targetAccountId: Number(
+        rule.targetAccountId,
+      ),
 
-        percentage:
-          parseNumber(
-            rule.percentage,
-          ),
-      }))
-      .filter(
-        (rule) =>
-          rule.percentage > 0,
-      )
+      percentage: parseNumber(
+        rule.percentage,
+      ),
+    }))
+    .filter(
+      (rule) =>
+        rule.percentage > 0,
+    )
 
-  if (
-    !activeRules.length
-  ) {
+  if (!activeRules.length) {
     formError.value =
       'Укажите хотя бы одно направление распределения.'
 
     return
   }
 
-  if (
-    !percentageIsValid.value
-  ) {
+  if (!percentageIsValid.value) {
     formError.value =
       'Сумма процентов распределения должна быть равна 100%.'
 
@@ -482,37 +410,36 @@ async function handleSave() {
   }
 
   try {
-    await allocationStore
-      .saveSettings({
-        id: 'main',
-        sourceAccountId,
+    await allocationStore.saveSettings({
+      id: 'main',
+      sourceAccountId,
 
-        salaryDayFirst,
-        salaryAmountFirst,
+      salaryDayFirst,
+      salaryAmountFirst,
 
-        salaryDaySecond,
-        salaryAmountSecond,
+      salaryDaySecond,
+      salaryAmountSecond,
 
-        minimumBalance:
-          minimumBalance.value,
+      minimumBalance:
+        minimumBalance.value,
 
-        categories:
-          form.categories.map(
-            (category) => ({
-              id: category.id,
+      categories:
+        form.categories.map(
+          (category) => ({
+            id: category.id,
 
-              name:
-                category.name.trim(),
+            name:
+              category.name.trim(),
 
-              amount:
-                parseNumber(
-                  category.amount,
-                ),
-            }),
-          ),
+            amount:
+              parseNumber(
+                category.amount,
+              ),
+          }),
+        ),
 
-        rules: activeRules,
-      })
+      rules: activeRules,
+    })
 
     successMessage.value =
       'Настройки сохранены.'
@@ -535,6 +462,14 @@ async function handleExportBackup() {
       return
     }
 
+    recordBackupCreated()
+
+    window.dispatchEvent(
+      new Event(
+        'finance-backup-created',
+      ),
+    )
+
     backupMessage.value =
       `Резервная копия создана: ` +
       `${result.accounts} счетов, ` +
@@ -555,13 +490,10 @@ function openBackupFilePicker() {
   backupMessage.value = ''
   backupError.value = ''
 
-  backupFileInput.value
-    ?.click()
+  backupFileInput.value?.click()
 }
 
-async function handleBackupFile(
-  event,
-) {
+async function handleBackupFile(event) {
   const file =
     event.target.files?.[0]
 
@@ -1283,5 +1215,7 @@ async function handleBackupFile(
         </span>
       </div>
     </section>
+
+    <DataHealthCard />
   </section>
 </template>
