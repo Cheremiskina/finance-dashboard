@@ -2170,3 +2170,28 @@ textarea {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+.account-rename-card {
+  scroll-margin-top: 20px;
+}
+
+.account-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.account-edit-button {
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 11px;
+}
+
+@media (max-width: 390px) {
+  .account-item__actions {
+    max-width: 145px;
+  }
+}

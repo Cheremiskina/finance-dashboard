@@ -9,6 +9,11 @@ const isSaving = ref(false)
 const actionAccountId = ref(null)
 const formError = ref('')
 
+const editingAccountId = ref(null)
+const renameValue = ref('')
+const renameError = ref('')
+const isRenaming = ref(false)
+
 const form = reactive({
   name: '',
   type: 'card',
@@ -59,12 +64,21 @@ const groupedSummary = computed(() => {
 
   for (const account of accountsStore.activeAccounts) {
     if (result[account.type] !== undefined) {
-      result[account.type] += Number(account.balance || 0)
+      result[account.type] += Number(
+        account.balance || 0,
+      )
     }
   }
 
   return result
 })
+
+const editingAccount = computed(() =>
+  accountsStore.accounts.find(
+    (account) =>
+      account.id === Number(editingAccountId.value),
+  ),
+)
 
 onMounted(() => {
   accountsStore.loadAccounts()
@@ -73,7 +87,8 @@ onMounted(() => {
 function getAccountType(type) {
   return (
     accountTypes.find(
-      (accountType) => accountType.value === type,
+      (accountType) =>
+        accountType.value === type,
     ) ?? {
       label: 'Другой счет',
       shortLabel: 'Счет',
@@ -111,6 +126,48 @@ function closeForm() {
   isFormOpen.value = false
 }
 
+function openRenameForm(account) {
+  editingAccountId.value = account.id
+  renameValue.value = account.name
+  renameError.value = ''
+}
+
+function closeRenameForm() {
+  editingAccountId.value = null
+  renameValue.value = ''
+  renameError.value = ''
+}
+
+async function handleRename() {
+  renameError.value = ''
+
+  const name = renameValue.value.trim()
+
+  if (!name) {
+    renameError.value =
+      'Введите новое название счета.'
+    return
+  }
+
+  isRenaming.value = true
+
+  try {
+    await accountsStore.renameAccount(
+      editingAccountId.value,
+      name,
+    )
+
+    closeRenameForm()
+  } catch (error) {
+    renameError.value =
+      error instanceof Error
+        ? error.message
+        : 'Не удалось изменить название счета.'
+  } finally {
+    isRenaming.value = false
+  }
+}
+
 async function handleSubmit() {
   formError.value = ''
 
@@ -126,7 +183,8 @@ async function handleSubmit() {
     form.balance === '' ||
     !Number.isFinite(balance)
   ) {
-    formError.value = 'Введите корректный баланс.'
+    formError.value =
+      'Введите корректный баланс.'
     return
   }
 
@@ -162,9 +220,17 @@ async function archiveAccount(account) {
   actionAccountId.value = account.id
 
   try {
-    await accountsStore.archiveAccount(account.id)
+    await accountsStore.archiveAccount(
+      account.id,
+    )
+
+    if (
+      editingAccountId.value === account.id
+    ) {
+      closeRenameForm()
+    }
   } catch {
-    // Сообщение отображается из accountsStore.error.
+    // Ошибка отображается из accountsStore.error.
   } finally {
     actionAccountId.value = null
   }
@@ -174,9 +240,11 @@ async function restoreAccount(account) {
   actionAccountId.value = account.id
 
   try {
-    await accountsStore.restoreAccount(account.id)
+    await accountsStore.restoreAccount(
+      account.id,
+    )
   } catch {
-    // Сообщение отображается из accountsStore.error.
+    // Ошибка отображается из accountsStore.error.
   } finally {
     actionAccountId.value = null
   }
@@ -187,8 +255,13 @@ async function restoreAccount(account) {
   <section class="screen">
     <header class="topbar topbar--with-action">
       <div>
-        <span class="topbar-label">Ваши счета</span>
-        <h1 class="screen-title">Счета</h1>
+        <span class="topbar-label">
+          Ваши счета
+        </span>
+
+        <h1 class="screen-title">
+          Счета
+        </h1>
       </div>
 
       <button
@@ -202,15 +275,23 @@ async function restoreAccount(account) {
     </header>
 
     <section class="mini-summary">
-      <div class="mini-summary__item mini-summary__item--blue">
+      <div
+        class="mini-summary__item mini-summary__item--blue"
+      >
         <span>Всего</span>
 
         <strong>
-          {{ formatMoney(accountsStore.totalBalance) }}
+          {{
+            formatMoney(
+              accountsStore.totalBalance,
+            )
+          }}
         </strong>
       </div>
 
-      <div class="mini-summary__item mini-summary__item--violet">
+      <div
+        class="mini-summary__item mini-summary__item--violet"
+      >
         <span>Накопления</span>
 
         <strong>
@@ -223,11 +304,17 @@ async function restoreAccount(account) {
         </strong>
       </div>
 
-      <div class="mini-summary__item mini-summary__item--pink">
+      <div
+        class="mini-summary__item mini-summary__item--pink"
+      >
         <span>Инвестиции</span>
 
         <strong>
-          {{ formatMoney(groupedSummary.broker) }}
+          {{
+            formatMoney(
+              groupedSummary.broker,
+            )
+          }}
         </strong>
       </div>
     </section>
@@ -258,7 +345,9 @@ async function restoreAccount(account) {
 
       <div class="field-list">
         <label class="field">
-          <span class="field-label">Название</span>
+          <span class="field-label">
+            Название
+          </span>
 
           <input
             v-model="form.name"
@@ -271,7 +360,9 @@ async function restoreAccount(account) {
         </label>
 
         <label class="field">
-          <span class="field-label">Тип счета</span>
+          <span class="field-label">
+            Тип счета
+          </span>
 
           <select
             v-model="form.type"
@@ -334,6 +425,76 @@ async function restoreAccount(account) {
       </div>
     </form>
 
+    <form
+      v-if="editingAccount"
+      class="surface-card sheet-card account-rename-card"
+      @submit.prevent="handleRename"
+    >
+      <div class="sheet-card__head">
+        <div>
+          <h2>Название счета</h2>
+
+          <p>
+            Изменение отобразится во всей истории операций.
+          </p>
+        </div>
+
+        <button
+          class="ghost-button"
+          type="button"
+          aria-label="Закрыть форму переименования"
+          @click="closeRenameForm"
+        >
+          ✕
+        </button>
+      </div>
+
+      <label class="field">
+        <span class="field-label">
+          Новое название
+        </span>
+
+        <input
+          v-model="renameValue"
+          class="text-input"
+          type="text"
+          maxlength="50"
+          autocomplete="off"
+          placeholder="Название счета"
+        />
+      </label>
+
+      <p
+        v-if="renameError"
+        class="error-message"
+      >
+        {{ renameError }}
+      </p>
+
+      <div class="sheet-card__actions">
+        <button
+          class="secondary-button"
+          type="button"
+          :disabled="isRenaming"
+          @click="closeRenameForm"
+        >
+          Отмена
+        </button>
+
+        <button
+          class="primary-button"
+          type="submit"
+          :disabled="isRenaming"
+        >
+          {{
+            isRenaming
+              ? 'Сохраняем…'
+              : 'Сохранить название'
+          }}
+        </button>
+      </div>
+    </form>
+
     <p
       v-if="accountsStore.error"
       class="error-message surface-card"
@@ -349,7 +510,9 @@ async function restoreAccount(account) {
     </div>
 
     <div
-      v-else-if="accountsStore.activeAccounts.length"
+      v-else-if="
+        accountsStore.activeAccounts.length
+      "
       class="account-stack"
     >
       <article
@@ -362,36 +525,65 @@ async function restoreAccount(account) {
             class="account-avatar"
             :class="`account-avatar--${account.type}`"
           >
-            {{ getAccountType(account.type).icon }}
+            {{
+              getAccountType(
+                account.type,
+              ).icon
+            }}
           </div>
 
           <div class="account-item__meta">
-            <strong>{{ account.name }}</strong>
+            <strong>
+              {{ account.name }}
+            </strong>
 
             <span>
-              {{ getAccountType(account.type).shortLabel }}
+              {{
+                getAccountType(
+                  account.type,
+                ).shortLabel
+              }}
             </span>
           </div>
         </div>
 
         <div class="account-item__right">
           <strong class="account-item__amount">
-            {{ formatMoney(account.balance) }}
+            {{
+              formatMoney(
+                account.balance,
+              )
+            }}
           </strong>
 
-          <button
-            class="ghost-button ghost-button--danger"
-            type="button"
-            :disabled="actionAccountId === account.id"
-            :aria-label="`Закрыть счет ${account.name}`"
-            @click="archiveAccount(account)"
-          >
-            {{
-              actionAccountId === account.id
-                ? 'Закрываем…'
-                : 'Закрыть'
-            }}
-          </button>
+          <div class="account-item__actions">
+            <button
+              class="ghost-button account-edit-button"
+              type="button"
+              :disabled="
+                actionAccountId === account.id
+              "
+              @click="openRenameForm(account)"
+            >
+              Название
+            </button>
+
+            <button
+              class="ghost-button ghost-button--danger"
+              type="button"
+              :disabled="
+                actionAccountId === account.id
+              "
+              :aria-label="`Закрыть счет ${account.name}`"
+              @click="archiveAccount(account)"
+            >
+              {{
+                actionAccountId === account.id
+                  ? 'Закрываем…'
+                  : 'Закрыть'
+              }}
+            </button>
+          </div>
         </div>
       </article>
     </div>
@@ -400,9 +592,13 @@ async function restoreAccount(account) {
       v-else-if="!accountsStore.isLoading"
       class="empty-card"
     >
-      <div class="empty-card__icon">💳</div>
+      <div class="empty-card__icon">
+        💳
+      </div>
 
-      <strong>Активных счетов пока нет</strong>
+      <strong>
+        Активных счетов пока нет
+      </strong>
 
       <p>
         Добавьте карту, наличные, накопительный
@@ -447,14 +643,24 @@ async function restoreAccount(account) {
             <div
               class="account-avatar account-avatar--archived"
             >
-              {{ getAccountType(account.type).icon }}
+              {{
+                getAccountType(
+                  account.type,
+                ).icon
+              }}
             </div>
 
             <div class="account-item__meta">
-              <strong>{{ account.name }}</strong>
+              <strong>
+                {{ account.name }}
+              </strong>
 
               <span>
-                {{ getAccountType(account.type).shortLabel }}
+                {{
+                  getAccountType(
+                    account.type,
+                  ).shortLabel
+                }}
                 · закрыт
               </span>
             </div>
@@ -462,21 +668,40 @@ async function restoreAccount(account) {
 
           <div class="account-item__right">
             <strong class="account-item__amount">
-              {{ formatMoney(account.balance) }}
+              {{
+                formatMoney(
+                  account.balance,
+                )
+              }}
             </strong>
 
-            <button
-              class="ghost-button account-restore-button"
-              type="button"
-              :disabled="actionAccountId === account.id"
-              @click="restoreAccount(account)"
-            >
-              {{
-                actionAccountId === account.id
-                  ? 'Возвращаем…'
-                  : 'Восстановить'
-              }}
-            </button>
+            <div class="account-item__actions">
+              <button
+                class="ghost-button account-edit-button"
+                type="button"
+                :disabled="
+                  actionAccountId === account.id
+                "
+                @click="openRenameForm(account)"
+              >
+                Название
+              </button>
+
+              <button
+                class="ghost-button account-restore-button"
+                type="button"
+                :disabled="
+                  actionAccountId === account.id
+                "
+                @click="restoreAccount(account)"
+              >
+                {{
+                  actionAccountId === account.id
+                    ? 'Возвращаем…'
+                    : 'Восстановить'
+                }}
+              </button>
+            </div>
           </div>
         </article>
       </div>

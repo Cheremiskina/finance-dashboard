@@ -80,6 +80,55 @@ export const useAccountsStore = defineStore('accounts', () => {
     }
   }
 
+  async function renameAccount(id, newName) {
+    error.value = ''
+
+    const accountId = Number(id)
+    const name = String(newName || '').trim()
+
+    if (!name) {
+        const renameError = new Error(
+        'Введите новое название счета.',
+        )
+
+        error.value = renameError.message
+        throw renameError
+    }
+
+    if (name.length > 50) {
+        const renameError = new Error(
+        'Название не должно быть длиннее 50 символов.',
+        )
+
+        error.value = renameError.message
+        throw renameError
+    }
+
+    try {
+        const account = await db.accounts.get(accountId)
+
+        if (!account) {
+        throw new Error('Счет не найден.')
+        }
+
+        await db.accounts.update(accountId, {
+        name,
+        updatedAt: new Date().toISOString(),
+        })
+
+        await loadAccounts()
+    } catch (renameError) {
+        console.error(renameError)
+
+        error.value =
+        renameError instanceof Error
+            ? renameError.message
+            : 'Не удалось изменить название счета.'
+
+        throw renameError
+    }
+  }
+
   async function archiveAccount(id) {
     error.value = ''
 
@@ -202,6 +251,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     error,
     loadAccounts,
     addAccount,
+    renameAccount,
     archiveAccount,
     restoreAccount,
   }
