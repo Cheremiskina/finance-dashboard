@@ -19,6 +19,12 @@ const isSaving = ref(false)
 const formError = ref('')
 const activeFilter = ref('all')
 
+const editingTransactionId = ref(null)
+
+const isEditing = computed(
+  () => editingTransactionId.value !== null,
+)
+
 const today = new Date().toISOString().slice(0, 10)
 
 const form = reactive({
@@ -158,15 +164,49 @@ function setDefaultAccounts() {
 }
 
 function openSheet(type = 'expense') {
+  editingTransactionId.value = null
+
   form.type = type
-  formError.value = ''
+  form.amount = ''
+  form.accountId = ''
+  form.fromAccountId = ''
+  form.toAccountId = ''
+  form.date = new Date().toISOString().slice(0, 10)
+  form.note = ''
+
+  if (type === 'expense') {
+    form.category = 'Продукты'
+  }
+
+  if (type === 'income') {
+    form.category = 'Зарплата'
+  }
+
   setDefaultAccounts()
+
+  formError.value = ''
   isSheetOpen.value = true
 }
 
 function closeSheet() {
   isSheetOpen.value = false
+  editingTransactionId.value = null
   formError.value = ''
+}
+
+function selectOperationType(type) {
+  form.type = type
+  formError.value = ''
+
+  if (type === 'expense') {
+    form.category = 'Продукты'
+  }
+
+  if (type === 'income') {
+    form.category = 'Зарплата'
+  }
+
+  setDefaultAccounts()
 }
 
 function resetForm() {
@@ -259,6 +299,39 @@ function getTransactionAmount(transaction) {
   return formatMoney(transaction.amount)
 }
 
+function openEditSheet(transaction) {
+  if (
+    transactionsStore.isProtectedTransaction(
+      transaction,
+    )
+  ) {
+    return
+  }
+
+  editingTransactionId.value = transaction.id
+
+  form.type = transaction.type
+  form.amount = String(transaction.amount)
+  form.date = transaction.date
+  form.note = transaction.note || ''
+  form.category =
+    transaction.category || 'Другое'
+
+  form.accountId =
+    transaction.accountId ?? ''
+
+  form.fromAccountId =
+    transaction.fromAccountId ?? ''
+
+  form.toAccountId =
+    transaction.toAccountId ?? ''
+
+  setDefaultAccounts()
+
+  formError.value = ''
+  isSheetOpen.value = true
+}
+
 async function handleSubmit() {
   formError.value = ''
 
@@ -294,16 +367,27 @@ async function handleSubmit() {
   isSaving.value = true
 
   try {
-    await transactionsStore.addTransaction({
-      type: form.type,
-      amount,
-      date: form.date,
-      category: form.category,
-      note: form.note,
-      accountId: form.accountId,
-      fromAccountId: form.fromAccountId,
-      toAccountId: form.toAccountId,
-    })
+    const payload = {
+        type: form.type,
+        amount,
+        date: form.date,
+        category: form.category,
+        note: form.note,
+        accountId: form.accountId,
+        fromAccountId: form.fromAccountId,
+        toAccountId: form.toAccountId,
+        }
+
+        if (isEditing.value) {
+        await transactionsStore.updateTransaction(
+            editingTransactionId.value,
+            payload,
+        )
+        } else {
+        await transactionsStore.addTransaction(
+            payload,
+        )
+    }
 
     resetForm()
     closeSheet()
@@ -312,6 +396,38 @@ async function handleSubmit() {
       error instanceof Error
         ? error.message
         : 'Не удалось сохранить операцию.'
+  } finally {
+    isSaving.value = false
+  }
+}
+
+async function handleDeleteTransaction() {
+  if (!isEditing.value) {
+    return
+  }
+
+  const shouldDelete = window.confirm(
+    'Удалить операцию? Балансы счетов будут пересчитаны.',
+  )
+
+  if (!shouldDelete) {
+    return
+  }
+
+  isSaving.value = true
+  formError.value = ''
+
+  try {
+    await transactionsStore.deleteTransaction(
+      editingTransactionId.value,
+    )
+
+    closeSheet()
+  } catch (deleteError) {
+    formError.value =
+      deleteError instanceof Error
+        ? deleteError.message
+        : 'Не удалось удалить операцию.'
   } finally {
     isSaving.value = false
   }
@@ -425,6 +541,26 @@ async function handleSubmit() {
             <span>
               {{ getTransactionSubtitle(transaction) }}
             </span>
+
+            <button
+                v-if="
+                    !transactionsStore.isProtectedTransaction(
+                    transaction,
+                    )
+                "
+                class="transaction-edit-link"
+                type="button"
+                @click="openEditSheet(transaction)"
+                >
+                Изменить
+            </button>
+
+            <span
+                v-else
+                class="transaction-auto-label"
+            >
+                Автоматическое распределение
+            </span>
           </div>
 
           <strong
@@ -473,7 +609,11 @@ async function handleSubmit() {
                 <span class="topbar-label">Новая запись</span>
 
                 <h2 id="operation-sheet-title">
-                  Добавить операцию
+                    {{
+                        isEditing
+                        ? 'Изменить операцию'
+                        : 'Добавить операцию'
+                    }}
                 </h2>
               </div>
 
@@ -501,7 +641,7 @@ async function handleSubmit() {
                       form.type === operationType.value,
                   }"
                   type="button"
-                  @click="form.type = operationType.value"
+                  @click="selectOperationType(operationType.value)"
                 >
                   {{ operationType.label }}
                 </button>
@@ -636,13 +776,31 @@ async function handleSubmit() {
                 {{ formError }}
               </p>
 
-              <button
-                class="primary-button operation-submit-button"
-                type="submit"
-                :disabled="isSaving"
-              >
-                {{ isSaving ? 'Сохраняем…' : 'Сохранить операцию' }}
-              </button>
+              <div class="operation-form-actions">
+                <button
+                    class="primary-button operation-submit-button"
+                    type="submit"
+                    :disabled="isSaving"
+                >
+                    {{
+                    isSaving
+                        ? 'Сохраняем…'
+                        : isEditing
+                        ? 'Сохранить изменения'
+                        : 'Сохранить операцию'
+                    }}
+                </button>
+
+                <button
+                    v-if="isEditing"
+                    class="danger-outline-button"
+                    type="button"
+                    :disabled="isSaving"
+                    @click="handleDeleteTransaction"
+                >
+                    Удалить операцию
+                </button>
+              </div>
             </form>
           </section>
         </div>
