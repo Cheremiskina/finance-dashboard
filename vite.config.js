@@ -37,7 +37,11 @@ export default defineConfig({
     vue(),
 
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
+
+      workbox: {
+        cleanupOutdatedCaches: true,
+      },
 
       includeAssets: [
         'favicon-32x32.png',
