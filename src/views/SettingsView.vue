@@ -6,6 +6,10 @@ import {
   ref,
   watch,
 } from 'vue'
+import {
+  exportBackup,
+  importBackup,
+} from '@/services/backup'
 import { RouterLink } from 'vue-router'
 import { useAccountsStore } from '@/stores/accounts'
 import { useAllocationStore } from '@/stores/allocation'
@@ -15,6 +19,12 @@ const allocationStore = useAllocationStore()
 
 const formError = ref('')
 const successMessage = ref('')
+
+const backupFileInput = ref(null)
+const backupMessage = ref('')
+const backupError = ref('')
+const isExportingBackup = ref(false)
+const isImportingBackup = ref(false)
 
 const form = reactive({
   sourceAccountId: '',
@@ -283,6 +293,89 @@ async function handleSave() {
       'Не удалось сохранить настройки.'
   }
 }
+
+async function handleExportBackup() {
+  backupMessage.value = ''
+  backupError.value = ''
+  isExportingBackup.value = true
+
+  try {
+    const result = await exportBackup()
+
+    if (result.cancelled) {
+      return
+    }
+
+    backupMessage.value =
+      `Резервная копия создана: ` +
+      `${result.accounts} счетов, ` +
+      `${result.transactions} операций.`
+  } catch (exportError) {
+    console.error(exportError)
+
+    backupError.value =
+        exportError instanceof Error
+            ? `${exportError.name}: ${exportError.message}`
+            : 'Не удалось создать резервную копию.'
+  } finally {
+    isExportingBackup.value = false
+  }
+}
+
+function openBackupFilePicker() {
+  backupMessage.value = ''
+  backupError.value = ''
+  backupFileInput.value?.click()
+}
+
+async function handleBackupFile(event) {
+  const file = event.target.files?.[0]
+
+  event.target.value = ''
+
+  if (!file) {
+    return
+  }
+
+  const shouldImport = window.confirm(
+    'Импорт полностью заменит текущие счета, операции и настройки. Продолжить?',
+  )
+
+  if (!shouldImport) {
+    return
+  }
+
+  backupMessage.value = ''
+  backupError.value = ''
+  isImportingBackup.value = true
+
+  try {
+    const result = await importBackup(file)
+
+    await Promise.all([
+      accountsStore.loadAccounts(),
+      allocationStore.loadSettings(),
+      allocationStore.loadRuns(),
+    ])
+
+    hydrateForm()
+
+    backupMessage.value =
+      `Данные восстановлены: ` +
+      `${result.accounts} счетов, ` +
+      `${result.transactions} операций.`
+  } catch (importError) {
+    console.error(importError)
+
+    backupError.value =
+      importError instanceof Error
+        ? importError.message
+        : 'Не удалось восстановить данные.'
+  } finally {
+    isImportingBackup.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -593,5 +686,115 @@ async function handleSave() {
         }}
       </button>
     </form>
+    <section
+    v-if="
+        !accountsStore.isLoading &&
+        !allocationStore.isLoading
+    "
+    class="settings-card backup-card"
+    >
+    <div class="settings-card__heading">
+        <div
+        class="settings-card__icon settings-card__icon--backup"
+        >
+        ☁️
+        </div>
+
+        <div>
+        <h2>Резервная копия</h2>
+
+        <p>
+            Сохраните счета, операции и настройки в файл.
+            Он понадобится для переноса на другое устройство
+            или восстановления данных.
+        </p>
+        </div>
+    </div>
+
+    <div class="backup-actions">
+        <button
+        class="backup-action backup-action--export"
+        type="button"
+        :disabled="
+            isExportingBackup ||
+            isImportingBackup
+        "
+        @click="handleExportBackup"
+        >
+        <span class="backup-action__icon">↑</span>
+
+        <span class="backup-action__copy">
+            <strong>
+            {{
+                isExportingBackup
+                ? 'Создаем файл…'
+                : 'Экспортировать'
+            }}
+            </strong>
+
+            <small>
+            Сохранить резервную копию
+            </small>
+        </span>
+        </button>
+
+        <button
+        class="backup-action"
+        type="button"
+        :disabled="
+            isImportingBackup ||
+            isExportingBackup
+        "
+        @click="openBackupFilePicker"
+        >
+        <span class="backup-action__icon">↓</span>
+
+        <span class="backup-action__copy">
+            <strong>
+            {{
+                isImportingBackup
+                ? 'Восстанавливаем…'
+                : 'Импортировать'
+            }}
+            </strong>
+
+            <small>
+            Загрузить данные из файла
+            </small>
+        </span>
+        </button>
+    </div>
+
+    <input
+        ref="backupFileInput"
+        hidden
+        type="file"
+        accept=".json,application/json"
+        @change="handleBackupFile"
+    />
+
+    <p
+        v-if="backupError"
+        class="error-message"
+    >
+        {{ backupError }}
+    </p>
+
+    <p
+        v-if="backupMessage"
+        class="success-message"
+    >
+        {{ backupMessage }}
+    </p>
+
+    <div class="backup-warning">
+        <strong>Важно</strong>
+
+        <span>
+        При импорте текущие данные приложения будут
+        заменены содержимым выбранного файла.
+        </span>
+    </div>
+    </section>
   </section>
 </template>

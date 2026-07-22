@@ -1971,3 +1971,135 @@ textarea {
     font-size: 14px;
   }
 }
+
+.settings-card__icon--backup {
+  color: #5664d8;
+  background: #e9ecff;
+}
+
+.backup-card {
+  margin-top: 2px;
+}
+
+.backup-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.backup-action {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+
+  min-width: 0;
+  min-height: 132px;
+  padding: 15px;
+
+  border: 1px solid var(--border);
+  border-radius: 19px;
+
+  color: var(--text);
+  background:
+    linear-gradient(
+      145deg,
+      #ffffff,
+      #f4f6fb
+    );
+
+  text-align: left;
+  box-shadow: var(--shadow-sm);
+}
+
+.backup-action--export {
+  color: #ffffff;
+  border-color: transparent;
+
+  background:
+    radial-gradient(
+      circle at top right,
+      rgb(255 255 255 / 25%),
+      transparent 42%
+    ),
+    linear-gradient(
+      145deg,
+      #596cf2,
+      #8061e8
+    );
+}
+
+.backup-action:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.backup-action__icon {
+  display: grid;
+  width: 39px;
+  height: 39px;
+  place-items: center;
+
+  border-radius: 13px;
+
+  color: var(--accent);
+  background: var(--accent-soft);
+
+  font-size: 21px;
+  font-weight: 750;
+}
+
+.backup-action--export .backup-action__icon {
+  color: #ffffff;
+  background: rgb(255 255 255 / 14%);
+}
+
+.backup-action__copy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.backup-action__copy strong {
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.backup-action__copy small {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.backup-action--export .backup-action__copy small {
+  color: rgb(255 255 255 / 70%);
+}
+
+.backup-warning {
+  display: grid;
+  gap: 5px;
+
+  padding: 13px 14px;
+  border-radius: 16px;
+
+  color: #8e621c;
+  background: #fff4dc;
+}
+
+.backup-warning strong {
+  font-size: 12px;
+}
+
+.backup-warning span {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 370px) {
+  .backup-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-action {
+    min-height: 105px;
+  }
+}
