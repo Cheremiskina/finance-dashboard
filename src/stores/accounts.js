@@ -2,257 +2,385 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { db } from '@/db/database'
 
-export const useAccountsStore = defineStore('accounts', () => {
-  const accounts = ref([])
-  const isLoading = ref(false)
-  const error = ref('')
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100
+}
 
-  const activeAccounts = computed(() =>
-    accounts.value.filter(
-      (account) => !account.isArchived,
-    ),
-  )
+function validateAccountName(value) {
+  const name = String(value || '').trim()
 
-  const archivedAccounts = computed(() =>
-    accounts.value.filter(
-      (account) => account.isArchived,
-    ),
-  )
-
-  const totalBalance = computed(() =>
-    activeAccounts.value.reduce(
-      (total, account) =>
-        total + Number(account.balance || 0),
-      0,
-    ),
-  )
-
-  async function loadAccounts() {
-    isLoading.value = true
-    error.value = ''
-
-    try {
-      const savedAccounts =
-        await db.accounts.toArray()
-
-      accounts.value = savedAccounts.sort(
-        (first, second) =>
-          String(first.createdAt).localeCompare(
-            String(second.createdAt),
-          ),
-      )
-    } catch (loadError) {
-      console.error(loadError)
-
-      error.value =
-        'Не удалось загрузить счета.'
-    } finally {
-      isLoading.value = false
-    }
+  if (!name) {
+    throw new Error('Введите название счета.')
   }
 
-  async function addAccount(payload) {
-    error.value = ''
-
-    const account = {
-      name: payload.name.trim(),
-      type: payload.type,
-      balance: Number(payload.balance),
-      isArchived: false,
-      archivedAt: null,
-      createdAt: new Date().toISOString(),
-    }
-
-    try {
-      const id = await db.accounts.add(account)
-
-      accounts.value.push({
-        ...account,
-        id,
-      })
-    } catch (addError) {
-      console.error(addError)
-
-      error.value =
-        'Не удалось сохранить счет.'
-
-      throw addError
-    }
+  if (name.length > 50) {
+    throw new Error(
+      'Название не должно быть длиннее 50 символов.',
+    )
   }
 
-  async function renameAccount(id, newName) {
-    error.value = ''
+  return name
+}
 
-    const accountId = Number(id)
-    const name = String(newName || '').trim()
+export const useAccountsStore = defineStore(
+  'accounts',
+  () => {
+    const accounts = ref([])
+    const isLoading = ref(false)
+    const error = ref('')
 
-    if (!name) {
-        const renameError = new Error(
-        'Введите новое название счета.',
+    const activeAccounts = computed(() =>
+      accounts.value.filter(
+        (account) => !account.isArchived,
+      ),
+    )
+
+    const archivedAccounts = computed(() =>
+      accounts.value.filter(
+        (account) => account.isArchived,
+      ),
+    )
+
+    const totalBalance = computed(() =>
+      activeAccounts.value.reduce(
+        (total, account) =>
+          total + Number(account.balance || 0),
+        0,
+      ),
+    )
+
+    async function loadAccounts() {
+      isLoading.value = true
+      error.value = ''
+
+      try {
+        const savedAccounts =
+          await db.accounts.toArray()
+
+        accounts.value = savedAccounts.sort(
+          (first, second) =>
+            String(first.createdAt).localeCompare(
+              String(second.createdAt),
+            ),
         )
-
-        error.value = renameError.message
-        throw renameError
-    }
-
-    if (name.length > 50) {
-        const renameError = new Error(
-        'Название не должно быть длиннее 50 символов.',
-        )
-
-        error.value = renameError.message
-        throw renameError
-    }
-
-    try {
-        const account = await db.accounts.get(accountId)
-
-        if (!account) {
-        throw new Error('Счет не найден.')
-        }
-
-        await db.accounts.update(accountId, {
-        name,
-        updatedAt: new Date().toISOString(),
-        })
-
-        await loadAccounts()
-    } catch (renameError) {
-        console.error(renameError)
+      } catch (loadError) {
+        console.error(loadError)
 
         error.value =
-        renameError instanceof Error
-            ? renameError.message
-            : 'Не удалось изменить название счета.'
-
-        throw renameError
+          'Не удалось загрузить счета.'
+      } finally {
+        isLoading.value = false
+      }
     }
-  }
 
-  async function archiveAccount(id) {
-    error.value = ''
+    async function addAccount(payload) {
+      error.value = ''
 
-    try {
-      const accountId = Number(id)
+      try {
+        const name = validateAccountName(
+          payload.name,
+        )
 
-      await db.transaction(
-        'rw',
-        db.accounts,
-        db.allocationSettings,
-        async () => {
-          const account =
-            await db.accounts.get(accountId)
+        const balance = Number(payload.balance)
 
-          if (!account) {
-            throw new Error('Счет не найден.')
-          }
+        if (!Number.isFinite(balance)) {
+          throw new Error(
+            'Введите корректный баланс.',
+          )
+        }
 
-          if (account.isArchived) {
-            return
-          }
+        const account = {
+          name,
+          type: payload.type,
+          balance: roundMoney(balance),
+          isArchived: false,
+          archivedAt: null,
+          balanceAdjustedAt: null,
+          balanceBeforeAdjustment: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: null,
+        }
 
-          if (
-            Math.abs(
-              Number(account.balance || 0),
-            ) >= 0.01
-          ) {
-            throw new Error(
-              'Сначала переведите остаток со счета. Закрыть можно только счет с нулевым балансом.',
-            )
-          }
+        const id =
+          await db.accounts.add(account)
 
-          await db.accounts.update(accountId, {
-            isArchived: true,
-            archivedAt: new Date().toISOString(),
-          })
+        accounts.value.push({
+          ...account,
+          id,
+        })
+      } catch (addError) {
+        console.error(addError)
 
-          const settings =
-            await db.allocationSettings.get('main')
+        error.value =
+          addError instanceof Error
+            ? addError.message
+            : 'Не удалось сохранить счет.'
 
-          if (settings) {
-            const sourceWasArchived =
-              Number(settings.sourceAccountId) ===
-              accountId
-
-            const updatedRules = Array.isArray(
-              settings.rules,
-            )
-              ? settings.rules.filter(
-                  (rule) =>
-                    Number(rule.targetAccountId) !==
-                    accountId,
-                )
-              : []
-
-            await db.allocationSettings.put({
-              ...settings,
-
-              sourceAccountId:
-                sourceWasArchived
-                  ? null
-                  : settings.sourceAccountId,
-
-              rules: updatedRules,
-              updatedAt: new Date().toISOString(),
-            })
-          }
-        },
-      )
-
-      await loadAccounts()
-    } catch (archiveError) {
-      console.error(archiveError)
-
-      error.value =
-        archiveError instanceof Error
-          ? archiveError.message
-          : 'Не удалось закрыть счет.'
-
-      throw archiveError
+        throw addError
+      }
     }
-  }
 
-  async function restoreAccount(id) {
-    error.value = ''
+    async function updateAccount(
+      id,
+      payload,
+    ) {
+      error.value = ''
 
-    try {
-      const accountId = Number(id)
+      try {
+        const accountId = Number(id)
+        const name = validateAccountName(
+          payload.name,
+        )
+
+        const balance = Number(
+          payload.balance,
+        )
+
+        if (!Number.isFinite(balance)) {
+          throw new Error(
+            'Введите корректный баланс.',
+          )
+        }
+
+        const account =
+          await db.accounts.get(accountId)
+
+        if (!account) {
+          throw new Error(
+            'Счет не найден.',
+          )
+        }
+
+        const currentBalance = roundMoney(
+          account.balance,
+        )
+
+        const nextBalance = roundMoney(
+          balance,
+        )
+
+        const balanceChanged =
+          Math.abs(
+            nextBalance - currentBalance,
+          ) >= 0.01
+
+        if (
+          account.isArchived &&
+          balanceChanged
+        ) {
+          throw new Error(
+            'Сначала восстановите счет. Баланс закрытого счета изменять нельзя.',
+          )
+        }
+
+        const updatedAt =
+          new Date().toISOString()
+
+        const changes = {
+          name,
+          updatedAt,
+        }
+
+        if (!account.isArchived) {
+          changes.balance = nextBalance
+
+          if (balanceChanged) {
+            changes.balanceBeforeAdjustment =
+              currentBalance
+
+            changes.balanceAdjustedAt =
+              updatedAt
+          }
+        }
+
+        await db.accounts.update(
+          accountId,
+          changes,
+        )
+
+        await loadAccounts()
+      } catch (updateError) {
+        console.error(updateError)
+
+        error.value =
+          updateError instanceof Error
+            ? updateError.message
+            : 'Не удалось изменить счет.'
+
+        throw updateError
+      }
+    }
+
+    async function renameAccount(
+      id,
+      newName,
+    ) {
       const account =
-        await db.accounts.get(accountId)
+        await db.accounts.get(Number(id))
 
       if (!account) {
-        throw new Error('Счет не найден.')
+        throw new Error(
+          'Счет не найден.',
+        )
       }
 
-      await db.accounts.update(accountId, {
-        isArchived: false,
-        archivedAt: null,
+      return updateAccount(id, {
+        name: newName,
+        balance: account.balance,
       })
-
-      await loadAccounts()
-    } catch (restoreError) {
-      console.error(restoreError)
-
-      error.value =
-        restoreError instanceof Error
-          ? restoreError.message
-          : 'Не удалось восстановить счет.'
-
-      throw restoreError
     }
-  }
 
-  return {
-    accounts,
-    activeAccounts,
-    archivedAccounts,
-    totalBalance,
-    isLoading,
-    error,
-    loadAccounts,
-    addAccount,
-    renameAccount,
-    archiveAccount,
-    restoreAccount,
-  }
-})
+    async function archiveAccount(id) {
+      error.value = ''
+
+      try {
+        const accountId = Number(id)
+
+        await db.transaction(
+          'rw',
+          db.accounts,
+          db.allocationSettings,
+          async () => {
+            const account =
+              await db.accounts.get(accountId)
+
+            if (!account) {
+              throw new Error(
+                'Счет не найден.',
+              )
+            }
+
+            if (account.isArchived) {
+              return
+            }
+
+            if (
+              Math.abs(
+                Number(account.balance || 0),
+              ) >= 0.01
+            ) {
+              throw new Error(
+                'Сначала переведите остаток со счета. Закрыть можно только счет с нулевым балансом.',
+              )
+            }
+
+            await db.accounts.update(
+              accountId,
+              {
+                isArchived: true,
+                archivedAt:
+                  new Date().toISOString(),
+                updatedAt:
+                  new Date().toISOString(),
+              },
+            )
+
+            const settings =
+              await db.allocationSettings.get(
+                'main',
+              )
+
+            if (settings) {
+              const sourceWasArchived =
+                Number(
+                  settings.sourceAccountId,
+                ) === accountId
+
+              const updatedRules =
+                Array.isArray(
+                  settings.rules,
+                )
+                  ? settings.rules.filter(
+                      (rule) =>
+                        Number(
+                          rule.targetAccountId,
+                        ) !== accountId,
+                    )
+                  : []
+
+              await db.allocationSettings.put({
+                ...settings,
+
+                sourceAccountId:
+                  sourceWasArchived
+                    ? null
+                    : settings.sourceAccountId,
+
+                rules: updatedRules,
+
+                updatedAt:
+                  new Date().toISOString(),
+              })
+            }
+          },
+        )
+
+        await loadAccounts()
+      } catch (archiveError) {
+        console.error(archiveError)
+
+        error.value =
+          archiveError instanceof Error
+            ? archiveError.message
+            : 'Не удалось закрыть счет.'
+
+        throw archiveError
+      }
+    }
+
+    async function restoreAccount(id) {
+      error.value = ''
+
+      try {
+        const accountId = Number(id)
+
+        const account =
+          await db.accounts.get(accountId)
+
+        if (!account) {
+          throw new Error(
+            'Счет не найден.',
+          )
+        }
+
+        await db.accounts.update(
+          accountId,
+          {
+            isArchived: false,
+            archivedAt: null,
+            updatedAt:
+              new Date().toISOString(),
+          },
+        )
+
+        await loadAccounts()
+      } catch (restoreError) {
+        console.error(restoreError)
+
+        error.value =
+          restoreError instanceof Error
+            ? restoreError.message
+            : 'Не удалось восстановить счет.'
+
+        throw restoreError
+      }
+    }
+
+    return {
+      accounts,
+      activeAccounts,
+      archivedAccounts,
+      totalBalance,
+
+      isLoading,
+      error,
+
+      loadAccounts,
+      addAccount,
+      updateAccount,
+      renameAccount,
+      archiveAccount,
+      restoreAccount,
+    }
+  },
+)

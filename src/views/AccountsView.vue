@@ -1,5 +1,10 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import {
+  computed,
+  onMounted,
+  reactive,
+  ref,
+} from 'vue'
 import { useAccountsStore } from '@/stores/accounts'
 
 const accountsStore = useAccountsStore()
@@ -10,13 +15,17 @@ const actionAccountId = ref(null)
 const formError = ref('')
 
 const editingAccountId = ref(null)
-const renameValue = ref('')
-const renameError = ref('')
-const isRenaming = ref(false)
+const editError = ref('')
+const isEditing = ref(false)
 
 const form = reactive({
   name: '',
   type: 'card',
+  balance: '',
+})
+
+const editForm = reactive({
+  name: '',
   balance: '',
 })
 
@@ -62,11 +71,16 @@ const groupedSummary = computed(() => {
     broker: 0,
   }
 
-  for (const account of accountsStore.activeAccounts) {
-    if (result[account.type] !== undefined) {
-      result[account.type] += Number(
-        account.balance || 0,
-      )
+  for (
+    const account of
+    accountsStore.activeAccounts
+  ) {
+    if (
+      result[account.type] !==
+      undefined
+    ) {
+      result[account.type] +=
+        Number(account.balance || 0)
     }
   }
 
@@ -76,7 +90,8 @@ const groupedSummary = computed(() => {
 const editingAccount = computed(() =>
   accountsStore.accounts.find(
     (account) =>
-      account.id === Number(editingAccountId.value),
+      account.id ===
+      Number(editingAccountId.value),
   ),
 )
 
@@ -98,12 +113,15 @@ function getAccountType(type) {
 }
 
 function formatMoney(value) {
-  return new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency: 'RUB',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0))
+  return new Intl.NumberFormat(
+    'ru-RU',
+    {
+      style: 'currency',
+      currency: 'RUB',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    },
+  ).format(Number(value || 0))
 }
 
 function parseBalance(value) {
@@ -112,6 +130,21 @@ function parseBalance(value) {
     .replace(',', '.')
 
   return Number(normalizedValue)
+}
+
+function formatAdjustmentDate(value) {
+  if (!value) {
+    return ''
+  }
+
+  return new Intl.DateTimeFormat(
+    'ru-RU',
+    {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    },
+  ).format(new Date(value))
 }
 
 function resetForm() {
@@ -126,45 +159,71 @@ function closeForm() {
   isFormOpen.value = false
 }
 
-function openRenameForm(account) {
-  editingAccountId.value = account.id
-  renameValue.value = account.name
-  renameError.value = ''
+function openEditForm(account) {
+  editingAccountId.value =
+    account.id
+
+  editForm.name =
+    account.name
+
+  editForm.balance =
+    String(account.balance ?? 0)
+
+  editError.value = ''
 }
 
-function closeRenameForm() {
+function closeEditForm() {
   editingAccountId.value = null
-  renameValue.value = ''
-  renameError.value = ''
+  editForm.name = ''
+  editForm.balance = ''
+  editError.value = ''
 }
 
-async function handleRename() {
-  renameError.value = ''
+async function handleEdit() {
+  editError.value = ''
 
-  const name = renameValue.value.trim()
+  const name =
+    editForm.name.trim()
+
+  const balance =
+    parseBalance(editForm.balance)
 
   if (!name) {
-    renameError.value =
-      'Введите новое название счета.'
+    editError.value =
+      'Введите название счета.'
+
     return
   }
 
-  isRenaming.value = true
+  if (
+    editForm.balance === '' ||
+    !Number.isFinite(balance)
+  ) {
+    editError.value =
+      'Введите корректный баланс.'
+
+    return
+  }
+
+  isEditing.value = true
 
   try {
-    await accountsStore.renameAccount(
+    await accountsStore.updateAccount(
       editingAccountId.value,
-      name,
+      {
+        name,
+        balance,
+      },
     )
 
-    closeRenameForm()
+    closeEditForm()
   } catch (error) {
-    renameError.value =
+    editError.value =
       error instanceof Error
         ? error.message
-        : 'Не удалось изменить название счета.'
+        : 'Не удалось изменить счет.'
   } finally {
-    isRenaming.value = false
+    isEditing.value = false
   }
 }
 
@@ -172,10 +231,14 @@ async function handleSubmit() {
   formError.value = ''
 
   const name = form.name.trim()
-  const balance = parseBalance(form.balance)
+
+  const balance =
+    parseBalance(form.balance)
 
   if (!name) {
-    formError.value = 'Введите название счета.'
+    formError.value =
+      'Введите название счета.'
+
     return
   }
 
@@ -185,6 +248,7 @@ async function handleSubmit() {
   ) {
     formError.value =
       'Введите корректный баланс.'
+
     return
   }
 
@@ -208,16 +272,20 @@ async function handleSubmit() {
   }
 }
 
-async function archiveAccount(account) {
-  const shouldArchive = window.confirm(
-    `Закрыть счет «${account.name}»? Счет останется в истории операций.`,
-  )
+async function archiveAccount(
+  account,
+) {
+  const shouldArchive =
+    window.confirm(
+      `Закрыть счет «${account.name}»? Счет останется в истории операций.`,
+    )
 
   if (!shouldArchive) {
     return
   }
 
-  actionAccountId.value = account.id
+  actionAccountId.value =
+    account.id
 
   try {
     await accountsStore.archiveAccount(
@@ -225,26 +293,32 @@ async function archiveAccount(account) {
     )
 
     if (
-      editingAccountId.value === account.id
+      editingAccountId.value ===
+      account.id
     ) {
-      closeRenameForm()
+      closeEditForm()
     }
   } catch {
-    // Ошибка отображается из accountsStore.error.
+    // Ошибка отображается
+    // из accountsStore.error.
   } finally {
     actionAccountId.value = null
   }
 }
 
-async function restoreAccount(account) {
-  actionAccountId.value = account.id
+async function restoreAccount(
+  account,
+) {
+  actionAccountId.value =
+    account.id
 
   try {
     await accountsStore.restoreAccount(
       account.id,
     )
   } catch {
-    // Ошибка отображается из accountsStore.error.
+    // Ошибка отображается
+    // из accountsStore.error.
   } finally {
     actionAccountId.value = null
   }
@@ -326,7 +400,9 @@ async function restoreAccount(account) {
     >
       <div class="sheet-card__head">
         <div>
-          <h2>Новый счет</h2>
+          <h2>
+            Новый счет
+          </h2>
 
           <p>
             Добавьте счет и укажите его текущий баланс.
@@ -369,7 +445,10 @@ async function restoreAccount(account) {
             class="text-input"
           >
             <option
-              v-for="accountType in accountTypes"
+              v-for="
+                accountType in
+                accountTypes
+              "
               :key="accountType.value"
               :value="accountType.value"
             >
@@ -427,56 +506,112 @@ async function restoreAccount(account) {
 
     <form
       v-if="editingAccount"
-      class="surface-card sheet-card account-rename-card"
-      @submit.prevent="handleRename"
+      class="surface-card sheet-card account-edit-card"
+      @submit.prevent="handleEdit"
     >
       <div class="sheet-card__head">
         <div>
-          <h2>Название счета</h2>
+          <h2>
+            Изменить счет
+          </h2>
 
-          <p>
-            Изменение отобразится во всей истории операций.
+          <p v-if="!editingAccount.isArchived">
+            Можно изменить название и сверить фактический
+            остаток с банком.
+          </p>
+
+          <p v-else>
+            Для закрытого счета можно изменить только
+            название.
           </p>
         </div>
 
         <button
           class="ghost-button"
           type="button"
-          aria-label="Закрыть форму переименования"
-          @click="closeRenameForm"
+          aria-label="Закрыть форму изменения счета"
+          @click="closeEditForm"
         >
           ✕
         </button>
       </div>
 
-      <label class="field">
-        <span class="field-label">
-          Новое название
-        </span>
+      <div class="field-list">
+        <label class="field">
+          <span class="field-label">
+            Название счета
+          </span>
 
-        <input
-          v-model="renameValue"
-          class="text-input"
-          type="text"
-          maxlength="50"
-          autocomplete="off"
-          placeholder="Название счета"
-        />
-      </label>
+          <input
+            v-model="editForm.name"
+            class="text-input"
+            type="text"
+            maxlength="50"
+            autocomplete="off"
+            placeholder="Название счета"
+          />
+        </label>
+
+        <label class="field">
+          <span class="field-label">
+            Фактический баланс
+          </span>
+
+          <input
+            v-model="editForm.balance"
+            class="text-input"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            placeholder="0"
+            :disabled="
+              editingAccount.isArchived
+            "
+          />
+        </label>
+      </div>
+
+      <div
+        v-if="!editingAccount.isArchived"
+        class="account-balance-notice"
+      >
+        <strong>
+          Ручная корректировка
+        </strong>
+
+        <span>
+          Изменится только текущий баланс счета.
+          Доход, расход или перевод в истории
+          не создаётся.
+        </span>
+      </div>
+
+      <div
+        v-else
+        class="account-balance-notice"
+      >
+        <strong>
+          Счет закрыт
+        </strong>
+
+        <span>
+          Для изменения баланса сначала восстановите счет.
+        </span>
+      </div>
 
       <p
-        v-if="renameError"
+        v-if="editError"
         class="error-message"
       >
-        {{ renameError }}
+        {{ editError }}
       </p>
 
       <div class="sheet-card__actions">
         <button
           class="secondary-button"
           type="button"
-          :disabled="isRenaming"
-          @click="closeRenameForm"
+          :disabled="isEditing"
+          @click="closeEditForm"
         >
           Отмена
         </button>
@@ -484,12 +619,12 @@ async function restoreAccount(account) {
         <button
           class="primary-button"
           type="submit"
-          :disabled="isRenaming"
+          :disabled="isEditing"
         >
           {{
-            isRenaming
+            isEditing
               ? 'Сохраняем…'
-              : 'Сохранить название'
+              : 'Сохранить изменения'
           }}
         </button>
       </div>
@@ -516,14 +651,19 @@ async function restoreAccount(account) {
       class="account-stack"
     >
       <article
-        v-for="account in accountsStore.activeAccounts"
+        v-for="
+          account in
+          accountsStore.activeAccounts
+        "
         :key="account.id"
         class="account-item"
       >
         <div class="account-item__left">
           <div
             class="account-avatar"
-            :class="`account-avatar--${account.type}`"
+            :class="
+              `account-avatar--${account.type}`
+            "
           >
             {{
               getAccountType(
@@ -544,6 +684,20 @@ async function restoreAccount(account) {
                 ).shortLabel
               }}
             </span>
+
+            <small
+              v-if="
+                account.balanceAdjustedAt
+              "
+              class="account-adjustment-label"
+            >
+              Баланс сверен
+              {{
+                formatAdjustmentDate(
+                  account.balanceAdjustedAt,
+                )
+              }}
+            </small>
           </div>
         </div>
 
@@ -563,9 +717,11 @@ async function restoreAccount(account) {
               :disabled="
                 actionAccountId === account.id
               "
-              @click="openRenameForm(account)"
+              @click="
+                openEditForm(account)
+              "
             >
-              Название
+              Изменить
             </button>
 
             <button
@@ -574,8 +730,12 @@ async function restoreAccount(account) {
               :disabled="
                 actionAccountId === account.id
               "
-              :aria-label="`Закрыть счет ${account.name}`"
-              @click="archiveAccount(account)"
+              :aria-label="
+                `Закрыть счет ${account.name}`
+              "
+              @click="
+                archiveAccount(account)
+              "
             >
               {{
                 actionAccountId === account.id
@@ -589,7 +749,9 @@ async function restoreAccount(account) {
     </div>
 
     <div
-      v-else-if="!accountsStore.isLoading"
+      v-else-if="
+        !accountsStore.isLoading
+      "
       class="empty-card"
     >
       <div class="empty-card__icon">
@@ -635,7 +797,10 @@ async function restoreAccount(account) {
 
       <div class="account-stack">
         <article
-          v-for="account in accountsStore.archivedAccounts"
+          v-for="
+            account in
+            accountsStore.archivedAccounts
+          "
           :key="account.id"
           class="account-item account-item--archived"
         >
@@ -682,7 +847,9 @@ async function restoreAccount(account) {
                 :disabled="
                   actionAccountId === account.id
                 "
-                @click="openRenameForm(account)"
+                @click="
+                  openEditForm(account)
+                "
               >
                 Название
               </button>
@@ -693,7 +860,9 @@ async function restoreAccount(account) {
                 :disabled="
                   actionAccountId === account.id
                 "
-                @click="restoreAccount(account)"
+                @click="
+                  restoreAccount(account)
+                "
               >
                 {{
                   actionAccountId === account.id
