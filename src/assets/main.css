@@ -2140,3 +2140,33 @@ textarea {
 .danger-outline-button:disabled {
   opacity: 0.55;
 }
+
+.archived-accounts-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.account-item--archived {
+  opacity: 0.76;
+  box-shadow: none;
+}
+
+.account-avatar--archived {
+  filter: grayscale(1);
+  background: #edf0f5;
+}
+
+.account-restore-button {
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 11px;
+}
+
+.ghost-button:disabled,
+.account-restore-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

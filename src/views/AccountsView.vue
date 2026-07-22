@@ -6,6 +6,7 @@ const accountsStore = useAccountsStore()
 
 const isFormOpen = ref(false)
 const isSaving = ref(false)
+const actionAccountId = ref(null)
 const formError = ref('')
 
 const form = reactive({
@@ -15,11 +16,36 @@ const form = reactive({
 })
 
 const accountTypes = [
-  { value: 'card', label: 'Банковская карта', shortLabel: 'Карта', icon: '💳' },
-  { value: 'cash', label: 'Наличные', shortLabel: 'Наличные', icon: '💵' },
-  { value: 'savings', label: 'Накопительный счет', shortLabel: 'Накопления', icon: '🏦' },
-  { value: 'deposit', label: 'Вклад', shortLabel: 'Вклад', icon: '🔒' },
-  { value: 'broker', label: 'Брокерский счет', shortLabel: 'Инвестиции', icon: '📈' },
+  {
+    value: 'card',
+    label: 'Банковская карта',
+    shortLabel: 'Карта',
+    icon: '💳',
+  },
+  {
+    value: 'cash',
+    label: 'Наличные',
+    shortLabel: 'Наличные',
+    icon: '💵',
+  },
+  {
+    value: 'savings',
+    label: 'Накопительный счет',
+    shortLabel: 'Накопления',
+    icon: '🏦',
+  },
+  {
+    value: 'deposit',
+    label: 'Вклад',
+    shortLabel: 'Вклад',
+    icon: '🔒',
+  },
+  {
+    value: 'broker',
+    label: 'Брокерский счет',
+    shortLabel: 'Инвестиции',
+    icon: '📈',
+  },
 ]
 
 const groupedSummary = computed(() => {
@@ -46,7 +72,9 @@ onMounted(() => {
 
 function getAccountType(type) {
   return (
-    accountTypes.find((accountType) => accountType.value === type) ?? {
+    accountTypes.find(
+      (accountType) => accountType.value === type,
+    ) ?? {
       label: 'Другой счет',
       shortLabel: 'Счет',
       icon: '💰',
@@ -59,8 +87,16 @@ function formatMoney(value) {
     style: 'currency',
     currency: 'RUB',
     minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(Number(value || 0))
+}
+
+function parseBalance(value) {
+  const normalizedValue = String(value)
+    .replace(/\s/g, '')
+    .replace(',', '.')
+
+  return Number(normalizedValue)
 }
 
 function resetForm() {
@@ -79,15 +115,17 @@ async function handleSubmit() {
   formError.value = ''
 
   const name = form.name.trim()
-  const normalizedBalance = String(form.balance).replace(',', '.')
-  const balance = Number(normalizedBalance)
+  const balance = parseBalance(form.balance)
 
   if (!name) {
     formError.value = 'Введите название счета.'
     return
   }
 
-  if (form.balance === '' || !Number.isFinite(balance)) {
+  if (
+    form.balance === '' ||
+    !Number.isFinite(balance)
+  ) {
     formError.value = 'Введите корректный баланс.'
     return
   }
@@ -102,21 +140,46 @@ async function handleSubmit() {
     })
 
     closeForm()
-  } catch {
-    formError.value = 'Не удалось сохранить счет.'
+  } catch (error) {
+    formError.value =
+      error instanceof Error
+        ? error.message
+        : 'Не удалось сохранить счет.'
   } finally {
     isSaving.value = false
   }
 }
 
-async function removeAccount(account) {
-  const shouldDelete = window.confirm(`Удалить счет «${account.name}»?`)
+async function archiveAccount(account) {
+  const shouldArchive = window.confirm(
+    `Закрыть счет «${account.name}»? Счет останется в истории операций.`,
+  )
 
-  if (!shouldDelete) {
+  if (!shouldArchive) {
     return
   }
 
-  await accountsStore.deleteAccount(account.id)
+  actionAccountId.value = account.id
+
+  try {
+    await accountsStore.archiveAccount(account.id)
+  } catch {
+    // Сообщение отображается из accountsStore.error.
+  } finally {
+    actionAccountId.value = null
+  }
+}
+
+async function restoreAccount(account) {
+  actionAccountId.value = account.id
+
+  try {
+    await accountsStore.restoreAccount(account.id)
+  } catch {
+    // Сообщение отображается из accountsStore.error.
+  } finally {
+    actionAccountId.value = null
+  }
 }
 </script>
 
@@ -141,19 +204,31 @@ async function removeAccount(account) {
     <section class="mini-summary">
       <div class="mini-summary__item mini-summary__item--blue">
         <span>Всего</span>
-        <strong>{{ formatMoney(accountsStore.totalBalance) }}</strong>
+
+        <strong>
+          {{ formatMoney(accountsStore.totalBalance) }}
+        </strong>
       </div>
 
       <div class="mini-summary__item mini-summary__item--violet">
         <span>Накопления</span>
+
         <strong>
-          {{ formatMoney(groupedSummary.savings + groupedSummary.deposit) }}
+          {{
+            formatMoney(
+              groupedSummary.savings +
+                groupedSummary.deposit,
+            )
+          }}
         </strong>
       </div>
 
       <div class="mini-summary__item mini-summary__item--pink">
         <span>Инвестиции</span>
-        <strong>{{ formatMoney(groupedSummary.broker) }}</strong>
+
+        <strong>
+          {{ formatMoney(groupedSummary.broker) }}
+        </strong>
       </div>
     </section>
 
@@ -165,10 +240,18 @@ async function removeAccount(account) {
       <div class="sheet-card__head">
         <div>
           <h2>Новый счет</h2>
-          <p>Добавьте счет и укажите его текущий баланс.</p>
+
+          <p>
+            Добавьте счет и укажите его текущий баланс.
+          </p>
         </div>
 
-        <button class="ghost-button" type="button" @click="closeForm">
+        <button
+          class="ghost-button"
+          type="button"
+          aria-label="Закрыть форму"
+          @click="closeForm"
+        >
           ✕
         </button>
       </div>
@@ -176,6 +259,7 @@ async function removeAccount(account) {
       <div class="field-list">
         <label class="field">
           <span class="field-label">Название</span>
+
           <input
             v-model="form.name"
             class="text-input"
@@ -188,19 +272,27 @@ async function removeAccount(account) {
 
         <label class="field">
           <span class="field-label">Тип счета</span>
-          <select v-model="form.type" class="text-input">
+
+          <select
+            v-model="form.type"
+            class="text-input"
+          >
             <option
               v-for="accountType in accountTypes"
               :key="accountType.value"
               :value="accountType.value"
             >
-              {{ accountType.icon }} {{ accountType.label }}
+              {{ accountType.icon }}
+              {{ accountType.label }}
             </option>
           </select>
         </label>
 
         <label class="field">
-          <span class="field-label">Текущий баланс</span>
+          <span class="field-label">
+            Текущий баланс
+          </span>
+
           <input
             v-model="form.balance"
             class="text-input"
@@ -212,30 +304,54 @@ async function removeAccount(account) {
         </label>
       </div>
 
-      <p v-if="formError" class="error-message">
+      <p
+        v-if="formError"
+        class="error-message"
+      >
         {{ formError }}
       </p>
 
       <div class="sheet-card__actions">
-        <button class="secondary-button" type="button" @click="closeForm">
+        <button
+          class="secondary-button"
+          type="button"
+          @click="closeForm"
+        >
           Отмена
         </button>
 
-        <button class="primary-button" type="submit" :disabled="isSaving">
-          {{ isSaving ? 'Сохраняем…' : 'Добавить счет' }}
+        <button
+          class="primary-button"
+          type="submit"
+          :disabled="isSaving"
+        >
+          {{
+            isSaving
+              ? 'Сохраняем…'
+              : 'Добавить счет'
+          }}
         </button>
       </div>
     </form>
 
-    <p v-if="accountsStore.error" class="error-message">
+    <p
+      v-if="accountsStore.error"
+      class="error-message surface-card"
+    >
       {{ accountsStore.error }}
     </p>
 
-    <div v-if="accountsStore.isLoading" class="surface-card">
+    <div
+      v-if="accountsStore.isLoading"
+      class="surface-card"
+    >
       Загружаем счета…
     </div>
 
-    <div v-else-if="accountsStore.activeAccounts.length" class="account-stack">
+    <div
+      v-else-if="accountsStore.activeAccounts.length"
+      class="account-stack"
+    >
       <article
         v-for="account in accountsStore.activeAccounts"
         :key="account.id"
@@ -251,7 +367,10 @@ async function removeAccount(account) {
 
           <div class="account-item__meta">
             <strong>{{ account.name }}</strong>
-            <span>{{ getAccountType(account.type).shortLabel }}</span>
+
+            <span>
+              {{ getAccountType(account.type).shortLabel }}
+            </span>
           </div>
         </div>
 
@@ -263,23 +382,104 @@ async function removeAccount(account) {
           <button
             class="ghost-button ghost-button--danger"
             type="button"
-            :aria-label="`Удалить счет ${account.name}`"
-            @click="removeAccount(account)"
+            :disabled="actionAccountId === account.id"
+            :aria-label="`Закрыть счет ${account.name}`"
+            @click="archiveAccount(account)"
           >
-            Удалить
+            {{
+              actionAccountId === account.id
+                ? 'Закрываем…'
+                : 'Закрыть'
+            }}
           </button>
         </div>
       </article>
     </div>
 
-    <div v-else class="empty-card">
+    <div
+      v-else-if="!accountsStore.isLoading"
+      class="empty-card"
+    >
       <div class="empty-card__icon">💳</div>
-      <strong>Счета пока не добавлены</strong>
-      <p>Начните с основной карты, наличных или накопительного счета.</p>
 
-      <button class="primary-button" type="button" @click="isFormOpen = true">
-        Добавить первый счет
+      <strong>Активных счетов пока нет</strong>
+
+      <p>
+        Добавьте карту, наличные, накопительный
+        или брокерский счет.
+      </p>
+
+      <button
+        class="primary-button"
+        type="button"
+        @click="isFormOpen = true"
+      >
+        Добавить счет
       </button>
     </div>
+
+    <section
+      v-if="
+        !accountsStore.isLoading &&
+        accountsStore.archivedAccounts.length
+      "
+      class="archived-accounts-section"
+    >
+      <div class="section-head">
+        <div>
+          <span class="section-label">
+            Архив
+          </span>
+
+          <h2 class="section-title">
+            Закрытые счета
+          </h2>
+        </div>
+      </div>
+
+      <div class="account-stack">
+        <article
+          v-for="account in accountsStore.archivedAccounts"
+          :key="account.id"
+          class="account-item account-item--archived"
+        >
+          <div class="account-item__left">
+            <div
+              class="account-avatar account-avatar--archived"
+            >
+              {{ getAccountType(account.type).icon }}
+            </div>
+
+            <div class="account-item__meta">
+              <strong>{{ account.name }}</strong>
+
+              <span>
+                {{ getAccountType(account.type).shortLabel }}
+                · закрыт
+              </span>
+            </div>
+          </div>
+
+          <div class="account-item__right">
+            <strong class="account-item__amount">
+              {{ formatMoney(account.balance) }}
+            </strong>
+
+            <button
+              class="ghost-button account-restore-button"
+              type="button"
+              :disabled="actionAccountId === account.id"
+              @click="restoreAccount(account)"
+            >
+              {{
+                actionAccountId === account.id
+                  ? 'Возвращаем…'
+                  : 'Восстановить'
+              }}
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
   </section>
 </template>

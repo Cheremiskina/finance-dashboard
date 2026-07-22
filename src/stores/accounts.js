@@ -8,12 +8,21 @@ export const useAccountsStore = defineStore('accounts', () => {
   const error = ref('')
 
   const activeAccounts = computed(() =>
-    accounts.value.filter((account) => !account.isArchived),
+    accounts.value.filter(
+      (account) => !account.isArchived,
+    ),
+  )
+
+  const archivedAccounts = computed(() =>
+    accounts.value.filter(
+      (account) => account.isArchived,
+    ),
   )
 
   const totalBalance = computed(() =>
     activeAccounts.value.reduce(
-      (total, account) => total + Number(account.balance || 0),
+      (total, account) =>
+        total + Number(account.balance || 0),
       0,
     ),
   )
@@ -23,14 +32,20 @@ export const useAccountsStore = defineStore('accounts', () => {
     error.value = ''
 
     try {
-      const savedAccounts = await db.accounts.toArray()
+      const savedAccounts =
+        await db.accounts.toArray()
 
-      accounts.value = savedAccounts.sort((first, second) =>
-        first.createdAt.localeCompare(second.createdAt),
+      accounts.value = savedAccounts.sort(
+        (first, second) =>
+          String(first.createdAt).localeCompare(
+            String(second.createdAt),
+          ),
       )
     } catch (loadError) {
       console.error(loadError)
-      error.value = 'Не удалось загрузить счета.'
+
+      error.value =
+        'Не удалось загрузить счета.'
     } finally {
       isLoading.value = false
     }
@@ -44,6 +59,7 @@ export const useAccountsStore = defineStore('accounts', () => {
       type: payload.type,
       balance: Number(payload.balance),
       isArchived: false,
+      archivedAt: null,
       createdAt: new Date().toISOString(),
     }
 
@@ -56,35 +72,137 @@ export const useAccountsStore = defineStore('accounts', () => {
       })
     } catch (addError) {
       console.error(addError)
-      error.value = 'Не удалось сохранить счет.'
+
+      error.value =
+        'Не удалось сохранить счет.'
+
       throw addError
     }
   }
 
-  async function deleteAccount(id) {
+  async function archiveAccount(id) {
     error.value = ''
 
     try {
-      await db.accounts.delete(id)
+      const accountId = Number(id)
 
-      accounts.value = accounts.value.filter(
-        (account) => account.id !== id,
+      await db.transaction(
+        'rw',
+        db.accounts,
+        db.allocationSettings,
+        async () => {
+          const account =
+            await db.accounts.get(accountId)
+
+          if (!account) {
+            throw new Error('Счет не найден.')
+          }
+
+          if (account.isArchived) {
+            return
+          }
+
+          if (
+            Math.abs(
+              Number(account.balance || 0),
+            ) >= 0.01
+          ) {
+            throw new Error(
+              'Сначала переведите остаток со счета. Закрыть можно только счет с нулевым балансом.',
+            )
+          }
+
+          await db.accounts.update(accountId, {
+            isArchived: true,
+            archivedAt: new Date().toISOString(),
+          })
+
+          const settings =
+            await db.allocationSettings.get('main')
+
+          if (settings) {
+            const sourceWasArchived =
+              Number(settings.sourceAccountId) ===
+              accountId
+
+            const updatedRules = Array.isArray(
+              settings.rules,
+            )
+              ? settings.rules.filter(
+                  (rule) =>
+                    Number(rule.targetAccountId) !==
+                    accountId,
+                )
+              : []
+
+            await db.allocationSettings.put({
+              ...settings,
+
+              sourceAccountId:
+                sourceWasArchived
+                  ? null
+                  : settings.sourceAccountId,
+
+              rules: updatedRules,
+              updatedAt: new Date().toISOString(),
+            })
+          }
+        },
       )
-    } catch (deleteError) {
-      console.error(deleteError)
-      error.value = 'Не удалось удалить счет.'
-      throw deleteError
+
+      await loadAccounts()
+    } catch (archiveError) {
+      console.error(archiveError)
+
+      error.value =
+        archiveError instanceof Error
+          ? archiveError.message
+          : 'Не удалось закрыть счет.'
+
+      throw archiveError
+    }
+  }
+
+  async function restoreAccount(id) {
+    error.value = ''
+
+    try {
+      const accountId = Number(id)
+      const account =
+        await db.accounts.get(accountId)
+
+      if (!account) {
+        throw new Error('Счет не найден.')
+      }
+
+      await db.accounts.update(accountId, {
+        isArchived: false,
+        archivedAt: null,
+      })
+
+      await loadAccounts()
+    } catch (restoreError) {
+      console.error(restoreError)
+
+      error.value =
+        restoreError instanceof Error
+          ? restoreError.message
+          : 'Не удалось восстановить счет.'
+
+      throw restoreError
     }
   }
 
   return {
     accounts,
     activeAccounts,
+    archivedAccounts,
     totalBalance,
     isLoading,
     error,
     loadAccounts,
     addAccount,
-    deleteAccount,
+    archiveAccount,
+    restoreAccount,
   }
 })
