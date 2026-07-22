@@ -1,5 +1,9 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import {
+  computed,
+  onMounted,
+  ref,
+} from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccountsStore } from '@/stores/accounts'
 import { useAllocationStore } from '@/stores/allocation'
@@ -7,7 +11,10 @@ import { useAllocationStore } from '@/stores/allocation'
 const accountsStore = useAccountsStore()
 const allocationStore = useAllocationStore()
 
-const selectedDate = ref(getLocalDate())
+const selectedDate = ref(
+  getLocalDate(),
+)
+
 const successMessage = ref('')
 
 const accountTypes = {
@@ -38,43 +45,87 @@ const accountTypes = {
 }
 
 const sourceAccount = computed(() =>
-  accountsStore.activeAccounts.find(
-    (account) =>
-      account.id ===
-      Number(allocationStore.settings.sourceAccountId),
-  ),
+  accountsStore
+    .activeAccounts.find(
+      (account) =>
+        account.id ===
+        Number(
+          allocationStore
+            .settings
+            .sourceAccountId,
+        ),
+    ),
 )
 
 const distribution = computed(() =>
-  allocationStore.calculateDistribution(
-    sourceAccount.value?.balance ?? 0,
-  ),
-)
-
-const distributionItems = computed(() =>
-  distribution.value.items.map((item) => ({
-    ...item,
-
-    account: accountsStore.activeAccounts.find(
-      (account) =>
-        account.id === Number(item.targetAccountId),
+  allocationStore
+    .calculateDistribution(
+      sourceAccount.value
+        ?.balance ?? 0,
     ),
-  })),
 )
 
-const targetAccountsAreValid = computed(() =>
-  distributionItems.value.every(
-    (item) => Boolean(item.account),
-  ),
+const salaryInfo = computed(() =>
+  allocationStore
+    .getSalaryScheduleInfo(
+      selectedDate.value,
+    ),
 )
+
+const distributionItems =
+  computed(() =>
+    distribution.value.items.map(
+      (item) => ({
+        ...item,
+
+        account:
+          accountsStore
+            .activeAccounts.find(
+              (account) =>
+                account.id ===
+                Number(
+                  item.targetAccountId,
+                ),
+            ),
+      }),
+    ),
+  )
+
+const targetAccountsAreValid =
+  computed(() =>
+    distributionItems.value.every(
+      (item) =>
+        Boolean(item.account),
+    ),
+  )
 
 const canExecute = computed(
   () =>
     distribution.value.isValid &&
-    distribution.value.amountToDistribute > 0 &&
+    distribution.value
+      .amountToDistribute > 0 &&
     targetAccountsAreValid.value &&
     !allocationStore.isExecuting,
 )
+
+const distributionKindTitle =
+  computed(() =>
+    salaryInfo.value.isPayday
+      ? 'Распределение после зарплаты'
+      : 'Повторное распределение остатка',
+  )
+
+const executeButtonText =
+  computed(() => {
+    const amount = formatMoney(
+      distribution.value
+        .amountToDistribute,
+    )
+
+    return salaryInfo.value.isPayday
+      ? `Распределить после выплаты ${amount}`
+      : `Распределить остаток ${amount}`
+  })
 
 onMounted(async () => {
   await Promise.all([
@@ -88,27 +139,59 @@ function getLocalDate() {
   const now = new Date()
 
   const localDate = new Date(
-    now.getTime() - now.getTimezoneOffset() * 60000,
+    now.getTime() -
+      now.getTimezoneOffset() *
+        60000,
   )
 
-  return localDate.toISOString().slice(0, 10)
+  return localDate
+    .toISOString()
+    .slice(0, 10)
 }
 
 function formatMoney(value) {
-  return new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency: 'RUB',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0))
+  return new Intl.NumberFormat(
+    'ru-RU',
+    {
+      style: 'currency',
+      currency: 'RUB',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    },
+  ).format(
+    Number(value || 0),
+  )
+}
+
+function formatExpectedAmount(
+  value,
+) {
+  const amount = Number(
+    value || 0,
+  )
+
+  return amount > 0
+    ? formatMoney(amount)
+    : 'Не указана'
 }
 
 function formatDate(value) {
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date(`${value}T12:00:00`))
+  if (!value) {
+    return 'Дата не указана'
+  }
+
+  return new Intl.DateTimeFormat(
+    'ru-RU',
+    {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    },
+  ).format(
+    new Date(
+      `${value}T12:00:00`,
+    ),
+  )
 }
 
 function getAccountType(type) {
@@ -122,10 +205,65 @@ function getAccountType(type) {
 
 function getAccountName(id) {
   return (
-    accountsStore.activeAccounts.find(
-      (account) => account.id === Number(id),
-    )?.name ?? 'Удаленный счет'
+    accountsStore.accounts.find(
+      (account) =>
+        account.id ===
+        Number(id),
+    )?.name ??
+    'Неизвестный счет'
   )
+}
+
+function getRunKind(run) {
+  if (
+    run.distributionKind ===
+    'salary'
+  ) {
+    return 'После зарплаты'
+  }
+
+  if (
+    run.distributionKind ===
+    'remainder'
+  ) {
+    return 'Остаток периода'
+  }
+
+  return 'Распределение'
+}
+
+function getDaysLabel(days) {
+  const value = Number(days)
+
+  if (value === 0) {
+    return 'Сегодня выплата'
+  }
+
+  const lastDigit =
+    value % 10
+
+  const lastTwoDigits =
+    value % 100
+
+  let word = 'дней'
+
+  if (
+    lastDigit === 1 &&
+    lastTwoDigits !== 11
+  ) {
+    word = 'день'
+  } else if (
+    [2, 3, 4].includes(
+      lastDigit,
+    ) &&
+    ![12, 13, 14].includes(
+      lastTwoDigits,
+    )
+  ) {
+    word = 'дня'
+  }
+
+  return `До выплаты ${value} ${word}`
 }
 
 async function handleExecute() {
@@ -135,25 +273,31 @@ async function handleExecute() {
     return
   }
 
-  const shouldExecute = window.confirm(
-    `Распределить ${formatMoney(
-      distribution.value.amountToDistribute,
-    )} между накопительными счетами?`,
-  )
+  const shouldExecute =
+    window.confirm(
+      `${distributionKindTitle.value}. Перевести ${formatMoney(
+        distribution.value
+          .amountToDistribute,
+      )} на накопительные счета?`,
+    )
 
   if (!shouldExecute) {
     return
   }
 
   try {
-    await allocationStore.executeDistribution({
-      date: selectedDate.value,
-    })
+    await allocationStore
+      .executeDistribution({
+        date:
+          selectedDate.value,
+      })
 
     successMessage.value =
-      'Распределение выполнено. Переводы добавлены в историю операций.'
+      salaryInfo.value.isPayday
+        ? 'Деньги после зарплаты распределены. Переводы добавлены в историю операций.'
+        : 'Остаток периода распределен. Переводы добавлены в историю операций.'
   } catch {
-    // Сообщение уже сохранено в allocationStore.error.
+    // Ошибка уже сохранена в allocationStore.error.
   }
 }
 </script>
@@ -186,15 +330,17 @@ async function handleExecute() {
       v-else-if="!sourceAccount"
       class="empty-card"
     >
-      <div class="empty-card__icon">⚙️</div>
+      <div class="empty-card__icon">
+        ⚙️
+      </div>
 
       <strong>
         Настройте распределение
       </strong>
 
       <p>
-        Выберите основной счет, бюджет на жизнь
-        и проценты накоплений.
+        Выберите основной счет, график зарплаты,
+        бюджет на жизнь и проценты накоплений.
       </p>
 
       <RouterLink
@@ -210,29 +356,133 @@ async function handleExecute() {
         <div class="allocation-source-card__account">
           <div
             class="account-avatar"
-            :class="`account-avatar--${sourceAccount.type}`"
+            :class="
+              `account-avatar--${sourceAccount.type}`
+            "
           >
-            {{ getAccountType(sourceAccount.type).icon }}
+            {{
+              getAccountType(
+                sourceAccount.type,
+              ).icon
+            }}
           </div>
 
           <div>
-            <span>Основной счет</span>
-            <strong>{{ sourceAccount.name }}</strong>
+            <span>
+              Основной счет
+            </span>
+
+            <strong>
+              {{ sourceAccount.name }}
+            </strong>
           </div>
         </div>
 
         <div class="allocation-source-card__balance">
-          <span>Текущий баланс</span>
+          <span>
+            Текущий баланс
+          </span>
 
           <strong>
-            {{ formatMoney(sourceAccount.balance) }}
+            {{
+              formatMoney(
+                sourceAccount.balance,
+              )
+            }}
           </strong>
         </div>
       </section>
 
+      <label class="field allocation-date-field">
+        <span class="field-label">
+          Дата расчета и переводов
+        </span>
+
+        <input
+          v-model="selectedDate"
+          class="text-input"
+          type="date"
+        />
+      </label>
+
+      <section class="salary-overview-card">
+        <div class="salary-overview-card__head">
+          <div>
+            <span>
+              Текущий период
+            </span>
+
+            <strong>
+              {{
+                formatDate(
+                  salaryInfo.currentPeriodStart,
+                )
+              }}
+              —
+              {{
+                formatDate(
+                  salaryInfo.currentPeriodEnd,
+                )
+              }}
+            </strong>
+          </div>
+
+          <div
+            class="salary-overview-badge"
+            :class="{
+              'salary-overview-badge--today':
+                salaryInfo.isPayday,
+            }"
+          >
+            {{
+              getDaysLabel(
+                salaryInfo.daysUntilNextPayment,
+              )
+            }}
+          </div>
+        </div>
+
+        <div class="salary-overview-card__main">
+          <div>
+            <span>
+              Ближайшая выплата
+            </span>
+
+            <strong>
+              {{
+                formatDate(
+                  salaryInfo.nextPaymentDate,
+                )
+              }}
+            </strong>
+          </div>
+
+          <div>
+            <span>
+              Ожидаемая сумма
+            </span>
+
+            <strong>
+              {{
+                formatExpectedAmount(
+                  salaryInfo.nextExpectedAmount,
+                )
+              }}
+            </strong>
+          </div>
+        </div>
+
+        <p class="salary-overview-note">
+          Ожидаемая зарплата используется только как
+          ориентир. Сумма для распределения всегда
+          рассчитывается по фактическому балансу
+          основного счета.
+        </p>
+      </section>
+
       <section class="allocation-result-card">
         <div class="allocation-result-card__label">
-          Можно распределить
+          {{ distributionKindTitle }}
         </div>
 
         <strong class="allocation-result-card__value">
@@ -254,7 +504,9 @@ async function handleExecute() {
 
         <div class="allocation-result-grid">
           <div>
-            <span>На жизнь</span>
+            <span>
+              До следующей зарплаты
+            </span>
 
             <strong>
               {{
@@ -266,7 +518,9 @@ async function handleExecute() {
           </div>
 
           <div>
-            <span>Резерв</span>
+            <span>
+              Резерв
+            </span>
 
             <strong>
               {{
@@ -281,7 +535,9 @@ async function handleExecute() {
 
       <section class="allocation-details-card">
         <div class="allocation-details-row">
-          <span>Баланс сейчас</span>
+          <span>
+            Баланс сейчас
+          </span>
 
           <strong>
             {{
@@ -293,7 +549,9 @@ async function handleExecute() {
         </div>
 
         <div class="allocation-details-row">
-          <span>Бюджет на две недели</span>
+          <span>
+            Бюджет до выплаты
+          </span>
 
           <strong>
             {{
@@ -305,7 +563,9 @@ async function handleExecute() {
         </div>
 
         <div class="allocation-details-row">
-          <span>Неснижаемый остаток</span>
+          <span>
+            Неснижаемый остаток
+          </span>
 
           <strong>
             {{
@@ -319,7 +579,9 @@ async function handleExecute() {
         <div
           class="allocation-details-row allocation-details-row--total"
         >
-          <span>Останется на счете</span>
+          <span>
+            Останется на счете
+          </span>
 
           <strong>
             {{
@@ -355,19 +617,27 @@ async function handleExecute() {
         </div>
 
         <div
-          v-if="distributionItems.length"
+          v-if="
+            distributionItems.length
+          "
           class="allocation-plan"
         >
           <article
-            v-for="item in distributionItems"
-            :key="item.targetAccountId"
+            v-for="
+              item in distributionItems
+            "
+            :key="
+              item.targetAccountId
+            "
             class="allocation-plan-row"
           >
             <div class="allocation-plan-row__account">
               <div
                 v-if="item.account"
                 class="account-avatar"
-                :class="`account-avatar--${item.account.type}`"
+                :class="
+                  `account-avatar--${item.account.type}`
+                "
               >
                 {{
                   getAccountType(
@@ -398,7 +668,11 @@ async function handleExecute() {
             </div>
 
             <strong class="allocation-plan-row__amount">
-              {{ formatMoney(item.amount) }}
+              {{
+                formatMoney(
+                  item.amount,
+                )
+              }}
             </strong>
           </article>
         </div>
@@ -416,12 +690,15 @@ async function handleExecute() {
 
         <p>
           На основном счете меньше или ровно столько,
-          сколько нужно оставить на жизнь и резерв.
+          сколько нужно оставить до следующей зарплаты
+          и на резерв.
         </p>
       </div>
 
       <div
-        v-if="!distribution.isValid"
+        v-if="
+          !distribution.isValid
+        "
         class="allocation-warning"
       >
         Проценты распределения должны быть равны 100%.
@@ -429,30 +706,24 @@ async function handleExecute() {
       </div>
 
       <div
-        v-if="!targetAccountsAreValid"
+        v-if="
+          !targetAccountsAreValid
+        "
         class="allocation-warning"
       >
-        Один из счетов распределения больше не существует.
+        Один из счетов распределения закрыт или не существует.
         Обновите настройки.
       </div>
 
-      <label class="field">
-        <span class="field-label">
-          Дата переводов
-        </span>
-
-        <input
-          v-model="selectedDate"
-          class="text-input"
-          type="date"
-        />
-      </label>
-
       <p
-        v-if="allocationStore.error"
+        v-if="
+          allocationStore.error
+        "
         class="error-message"
       >
-        {{ allocationStore.error }}
+        {{
+          allocationStore.error
+        }}
       </p>
 
       <p
@@ -471,14 +742,15 @@ async function handleExecute() {
         {{
           allocationStore.isExecuting
             ? 'Распределяем…'
-            : `Распределить ${formatMoney(
-                distribution.amountToDistribute,
-              )}`
+            : executeButtonText
         }}
       </button>
 
       <section
-        v-if="allocationStore.allocationRuns.length"
+        v-if="
+          allocationStore
+            .allocationRuns.length
+        "
         class="section-block allocation-history-section"
       >
         <div class="section-head">
@@ -495,7 +767,12 @@ async function handleExecute() {
 
         <div class="allocation-history-list">
           <article
-            v-for="run in allocationStore.allocationRuns.slice(0, 5)"
+            v-for="
+              run in
+              allocationStore
+                .allocationRuns
+                .slice(0, 5)
+            "
             :key="run.id"
             class="allocation-history-row"
           >
@@ -509,18 +786,38 @@ async function handleExecute() {
               </strong>
 
               <span>
-                {{ formatDate(run.date) }}
+                {{
+                  formatDate(
+                    run.date,
+                  )
+                }}
               </span>
+
+              <small class="allocation-history-kind">
+                {{ getRunKind(run) }}
+              </small>
             </div>
 
             <div class="allocation-history-row__targets">
               <span
-                v-for="item in run.items"
-                :key="item.targetAccountId"
+                v-for="
+                  item in run.items
+                "
+                :key="
+                  item.targetAccountId
+                "
               >
-                {{ getAccountName(item.targetAccountId) }}
+                {{
+                  getAccountName(
+                    item.targetAccountId,
+                  )
+                }}
                 ·
-                {{ formatMoney(item.amount) }}
+                {{
+                  formatMoney(
+                    item.amount,
+                  )
+                }}
               </span>
             </div>
           </article>
